@@ -1,0 +1,19 @@
+[project]
+name = "data_agent_backend"
+version = "0.1.0"
+description = "DeepSeek Data Analysis Agent with LangGraph"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=1.0.0",         # 核心框架
+    "langchain>=1.0.0",         # 基础组件
+    "langchain-deepseek",       # 模型适配器
+    "pandas",                   # 数据处理
+    "matplotlib",               # 绘图
+    "seaborn",                  # 绘图增强
+    "python-dotenv",            # 环境变量管理
+    "pydantic"                  # 数据验证
+]
+
+[tool.setuptools]
+packages = ["src"] 
