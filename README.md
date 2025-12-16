@@ -2,6 +2,8 @@
 
 一个基于 LangChain 1.1 和 React 的智能数据分析应用，支持 CSV 数据上传、AI 对话分析和数据可视化。
 
+![Data Agent](./public/show.jpg)
+
 ## ✨ 主要功能
 
 ### 📊 数据管理
