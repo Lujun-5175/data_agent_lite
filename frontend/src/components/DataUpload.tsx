@@ -39,9 +39,7 @@ export function DataUpload({ onDataUpload, onDataClear, uploadedData }: DataUplo
       }
 
       const result = await response.json();
-      console.log('Upload result:', result);
 
-      // 直接使用上传响应中的 preview 数据
       if (result.status === 'success' && result.preview && Array.isArray(result.preview)) {
         onDataUpload(result.preview);
         if (result.message) {
@@ -57,8 +55,6 @@ export function DataUpload({ onDataUpload, onDataClear, uploadedData }: DataUplo
       setIsUploading(false);
     }
   };
-
-
 
   const handleFileUpload = () => {
     fileInputRef.current?.click();
@@ -106,26 +102,26 @@ export function DataUpload({ onDataUpload, onDataClear, uploadedData }: DataUplo
           className="hidden"
         />
         <div
-          className={`w-full max-w-sm p-8 border-2 border-dashed rounded-2xl text-center transition-all duration-300 ${
+          className={`w-full max-w-sm p-8 border-2 border-black text-center transition-all duration-150 ${
             isDragOver 
-              ? 'border-amber-400 bg-amber-500/20 backdrop-blur-md scale-105 shadow-lg shadow-amber-500/25' 
-              : 'border-amber-500/30 hover:border-amber-400/50 bg-slate-800/40 backdrop-blur-md hover:bg-slate-800/60 shadow-lg'
+              ? 'bg-secondary border-2' 
+              : 'bg-[#D1D1D1] hover:bg-secondary/50'
           }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <div className="w-16 h-16 bg-gradient-to-r from-amber-500/20 to-orange-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-amber-500/30 shadow-lg shadow-amber-500/10">
-            <Upload className="w-8 h-8 text-amber-500" />
+          <div className="w-16 h-16 bg-primary rounded-none flex items-center justify-center mx-auto mb-6 border-2 border-black">
+            <Upload className="w-8 h-8 text-white" />
           </div>
-          <h4 className="mb-3 text-white font-medium">上传数据集</h4>
-          <p className="text-white/60 text-sm mb-6">
+          <h4 className="mb-3 text-black font-bold text-lg">上传数据集</h4>
+          <p className="text-gray-600 text-sm mb-6 font-medium">
             支持CSV格式，拖拽或点击上传
           </p>
           <Button 
             onClick={handleFileUpload}
             disabled={isUploading}
-            className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl px-6 py-2 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 border border-amber-400/30"
+            className="bg-primary hover:bg-primary/90"
           >
             {isUploading ? '上传中...' : '选择文件'}
           </Button>
@@ -135,30 +131,29 @@ export function DataUpload({ onDataUpload, onDataClear, uploadedData }: DataUplo
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* 数据统计信息 */}
-      <div className="p-4 flex items-center justify-between border-b border-amber-400/25">
-        <h3 className="text-white font-medium text-lg bg-gradient-to-r from-amber-200 to-yellow-200 bg-clip-text text-transparent">
+    <div className="h-full flex flex-col" style={{ backgroundColor: '#D1D1D1' }}>
+      <div className="p-4 flex items-center justify-between border-b-2 border-black bg-secondary">
+        <h3 className="text-black font-bold text-lg">
           部分数据展示（前10行）
         </h3>
         <Button
           onClick={handleClearData}
-          variant="outline"
+          variant="destructive"
           size="sm"
-          className="text-red-400 hover:text-red-300 hover:bg-red-500/20 border-red-500/50 hover:border-red-400 bg-transparent rounded-lg h-8 w-8 p-0 shadow-lg shadow-red-500/25"
+          className="h-8 w-8 p-0"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden" style={{ backgroundColor: '#D1D1D1' }}>
         <ScrollArea className="h-full custom-scrollbar">
-          <div className="bg-slate-800/40 backdrop-blur-md rounded-xl m-3 border border-amber-500/20 overflow-hidden shadow-2xl shadow-amber-500/10">
+          <div className="bg-[#D1D1D1] m-3 border-2 border-black overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow className="border-amber-500/20 hover:bg-slate-700/50">
+              <TableRow className="border-black hover:bg-secondary/30">
                 {uploadedData.length > 0 && Object.keys(uploadedData[0]).map((key) => (
-                  <TableHead key={key} className="text-amber-200 text-xs">
+                  <TableHead key={key} className="text-black text-xs bg-secondary/50">
                     {key}
                   </TableHead>
                 ))}
@@ -166,14 +161,14 @@ export function DataUpload({ onDataUpload, onDataClear, uploadedData }: DataUplo
             </TableHeader>
             <TableBody>
               {uploadedData.slice(0, 10).map((row, index) => (
-                <TableRow key={index} className="border-amber-500/20 hover:bg-slate-700/30 transition-colors">
+                <TableRow key={index} className="border-black hover:bg-secondary/30 transition-colors">
                   {Object.entries(row).map(([key, value], cellIndex) => (
-                    <TableCell key={cellIndex} className="text-xs text-white/90">
+                    <TableCell key={cellIndex} className="text-xs text-black font-medium">
                       {key === 'Churn' && (value === 'Yes' || value === 'No') ? (
-                        <span className={`px-2 py-1 rounded-lg text-xs font-medium border shadow-lg ${
+                        <span className={`px-2 py-1 text-xs font-bold border-2 border-black ${
                           value === 'Yes' 
-                            ? 'bg-red-600/30 text-red-300 border-red-500/50 shadow-red-500/25' 
-                            : 'bg-green-600/30 text-green-300 border-green-500/50 shadow-green-500/25'
+                            ? 'bg-destructive text-white' 
+                            : 'bg-accent text-white'
                         }`}>
                           {value}
                         </span>

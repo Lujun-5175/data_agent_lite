@@ -2597,6 +2597,41 @@
   .\[\&_svg\:not\(\[class\*\=\'text-\'\]\)\]\:text-muted-foreground svg:not([class*="text-"]) {
     color: var(--muted-foreground);
   }
+}
+
+/* Neo-Brutalism Overrides */
+:root {
+  --radius: 0px !important;
+  --neo-shadow: none !important;
+  --neo-shadow-hover: none !important;
+}
+
+* {
+  border-radius: 0px !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.shadow-neo, .shadow-neo-shadow, .shadow-neo-shadow-hover {
+  box-shadow: none !important;
+}
+
+.border-3 {
+  border-width: 2px !important;
+}
+
+.border-black {
+  border-color: #000000 !important;
+}
+
+/* Ensure background colors are correct */
+.bg-white {
+  background-color: #ffffff !important;
+}
+
+.bg-\[\#F0F0F0\] {
+  background-color: #F0F0F0 !important;
+}
 
   .\[\&_tr\]\:border-b tr {
     border-bottom-style: var(--tw-border-style);
