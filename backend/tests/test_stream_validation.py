@@ -118,6 +118,28 @@ class _InternalPlannerLeakGraph:
         yield {"event": "on_chain_end", "name": "golden-chain", "data": {}}
 
 
+class _InternalPlannerPrefixLeakGraph:
+    async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
+        intent_payload = json.dumps(
+            {
+                "intent_type": "followup",
+                "requires_ml": False,
+                "requires_chart": False,
+                "requires_python_analysis": False,
+                "deliverables": ["summary"],
+                "reasoning_summary": "internal planner note",
+                "suggested_plan": "do not show this",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        yield {
+            "event": "on_chat_model_stream",
+            "name": "golden-model",
+            "data": {"chunk": f"{intent_payload}好的，我来对这个数据集进行全面讲解。"},
+        }
+
+
 class _MixedWorkflowGraph:
     async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
         dataset_id = config.get("configurable", {}).get("dataset_id")
@@ -250,6 +272,22 @@ def test_stream_suppresses_internal_intent_payloads(monkeypatch: pytest.MonkeyPa
     assert "intent_type" not in text
     assert "reasoning_summary" not in text
     assert "suggested_plan" not in text
+
+
+@pytest.mark.usefixtures("client")
+def test_stream_strips_internal_intent_payload_prefix(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    monkeypatch.setattr(server, "graph", _InternalPlannerPrefixLeakGraph())
+    dataset_id = _upload_telco_fixture_dataset(client)
+    events = _stream_events(
+        client,
+        dataset_id,
+        [{"type": "human", "content": "讲解数据集"}],
+    )
+
+    text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
+    assert text == "好的，我来对这个数据集进行全面讲解。"
+    assert "intent_type" not in text
+    assert "reasoning_summary" not in text
 
 
 @pytest.mark.usefixtures("client")

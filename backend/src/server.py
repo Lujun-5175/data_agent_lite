@@ -372,6 +372,40 @@ def _looks_like_internal_intent_payload(text: str) -> bool:
     return "intent_type" in payload and len(intent_keys.intersection(payload)) >= 3
 
 
+def _strip_internal_intent_payload_prefix(text: str) -> str:
+    leading_whitespace_len = len(text) - len(text.lstrip())
+    stripped = text.lstrip()
+    if not stripped.startswith("{"):
+        return text
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(stripped):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = stripped[: index + 1]
+                if _looks_like_internal_intent_payload(candidate):
+                    return stripped[index + 1 :].lstrip()
+                return text
+
+    return text
+
+
 app = FastAPI(
     title="Data Agent Backend",
     version="1.1",
@@ -704,6 +738,7 @@ async def chat_stream(request: Request) -> StreamingResponse | JSONResponse:
                 if event_name == "on_chat_model_stream":
                     chunk = data.get("chunk") if isinstance(data, dict) else None
                     text = _extract_text_from_chunk(chunk)
+                    text = _strip_internal_intent_payload_prefix(text)
                     if _looks_like_internal_intent_payload(text):
                         continue
                     if text:
