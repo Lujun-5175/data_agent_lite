@@ -23,6 +23,17 @@ describe('api config', () => {
     expect(module.API_BASE_URL).toBe('http://127.0.0.1:8002');
   });
 
+  it('ignores localhost override in production builds', async () => {
+    vi.resetModules();
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('VITE_API_BASE_URL', 'http://127.0.0.1:8002');
+
+    const module = await import('./api');
+    expect(module.API_BASE_URL).toBe('/api');
+    expect(module.API_ENDPOINTS.UPLOAD).toBe('/api/upload');
+  });
+
   it('maps known backend error codes', async () => {
     const { getFriendlyErrorMessage } = await import('./api');
     expect(getFriendlyErrorMessage('file_too_large', 'fallback')).toContain('50MB');

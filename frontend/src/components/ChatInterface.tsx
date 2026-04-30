@@ -695,7 +695,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
       const message =
         error instanceof Error
           ? error.message === 'Failed to fetch'
-            ? '后端服务连接失败，请确认 8002 端口已启动。'
+            ? '后端服务连接失败，请确认线上后端已启动且 Vercel 已配置 BACKEND_URL。'
             : error.message
           : '调用AI助手时出现错误';
 
