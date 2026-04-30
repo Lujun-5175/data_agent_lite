@@ -4,6 +4,10 @@
   "outputDirectory": "frontend/build",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://dataagentlite-production.up.railway.app/:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
