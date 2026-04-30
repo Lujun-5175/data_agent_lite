@@ -1,159 +1,887 @@
-import os
-import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from langserve import add_routes
-from dotenv import load_dotenv
+from __future__ import annotations
 
-# 1. 强制加载环境变量 (确保 API Key 能被读取)
+import asyncio
+import contextlib
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from src.agent import graph
+from src.agent import AgentContext
+from src.agent import generate_general_chat_reply
+from src.agent import get_dataset_required_decision
+from src.data_manager import (
+    DatasetLoadError,
+    DatasetNotFoundError,
+    calculate_correlation,
+    cleanup_dataset_artifacts,
+    cleanup_expired_artifacts,
+    get_data_preview,
+    get_dataset,
+    load_csv_file,
+)
+from src.errors import AppError
+from src.result_types import artifact_registry
+from src.routing_rules import RoutingContext, interpret_request
+from src.settings import SETTINGS
+from src.tools import consume_current_image_event, set_current_dataset_id
+
 load_dotenv(override=True)
 
-# 导入项目模块
-# 注意：确保你的目录结构正确，且在根目录下运行 python -m src.server
-from src.agent import graph
-from src.data_manager import (
-    load_csv_file, 
-    get_dataframe, 
-    get_data_preview, 
-    calculate_correlation
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+STATIC_DIR = (BACKEND_ROOT / "static").resolve()
+IMAGES_DIR = (STATIC_DIR / "images").resolve()
+TEMP_DATA_DIR = (BACKEND_ROOT / "temp_data").resolve()
+MAX_UPLOAD_SIZE_BYTES = SETTINGS.max_upload_size_bytes
+UPLOAD_CHUNK_SIZE = SETTINGS.upload_chunk_size
+ARTIFACT_CLEANUP_INTERVAL_SECONDS = SETTINGS.artifact_cleanup_interval_seconds
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", os.getenv("FASTAPI_ENV", "production"))).strip().lower()
+IS_DEVELOPMENT = APP_ENV in {"dev", "development", "local"}
+DEV_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_cors_origins() -> list[str]:
+    configured = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    # Keep local development usable out of the box with explicit local origins.
+    # Production deployments should provide CORS_ALLOW_ORIGINS explicitly.
+    return DEV_CORS_ORIGINS
+
+
+class CorrelationRequest(BaseModel):
+    dataset_id: str = Field(description="数据集 ID")
+    col1: str = Field(description="第一列名称")
+    col2: str = Field(description="第二列名称")
+
+
+class ErrorPayload(BaseModel):
+    code: str
+    message: str
+
+
+def error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": ErrorPayload(code=code, message=message).model_dump()},
+        headers={"X-Error-Code": code},
+    )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _format_sse(event_type: str, payload: dict[str, object]) -> str:
+    return f"event: {event_type}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _extract_dataset_id_from_payload(payload: dict[str, object]) -> str | None:
+    config = payload.get("config")
+    if isinstance(config, dict):
+        configurable = config.get("configurable")
+        if isinstance(configurable, dict):
+            dataset_id = configurable.get("dataset_id")
+            if isinstance(dataset_id, str) and dataset_id.strip():
+                return dataset_id.strip()
+    dataset_id = payload.get("dataset_id")
+    if isinstance(dataset_id, str) and dataset_id.strip():
+        return dataset_id.strip()
+    return None
+
+
+def _extract_messages(payload: dict[str, object]) -> list[dict[str, object]]:
+    input_payload = payload.get("input")
+    if isinstance(input_payload, dict):
+        messages = input_payload.get("messages")
+        if isinstance(messages, list):
+            return [message for message in messages if isinstance(message, dict)]
+    messages = payload.get("messages")
+    if isinstance(messages, list):
+        return [message for message in messages if isinstance(message, dict)]
+    return []
+
+
+def _extract_latest_user_message(messages: list[dict[str, object]]) -> str:
+    for message in reversed(messages):
+        role = message.get("type")
+        if role not in {"human", "user"}:
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            stripped = content.strip()
+            if stripped:
+                return stripped
+    return ""
+
+
+def _has_prior_analysis_context(messages: list[dict[str, object]]) -> bool:
+    for message in messages[:-1]:
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        normalized = content.lower()
+        if any(token in normalized for token in ("dataset", "数据", "统计", "相关性", "group", "检验", "analysis")):
+            return True
+    return False
+
+
+def _extract_text_from_chunk(chunk: object) -> str:
+    if chunk is None:
+        return ""
+    if isinstance(chunk, str):
+        return chunk
+    if isinstance(chunk, dict):
+        content = chunk.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(_extract_text_from_chunk(item) for item in content)
+    content = getattr(chunk, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            parts.append(_extract_text_from_chunk(item))
+        return "".join(parts)
+    text = getattr(chunk, "text", None)
+    if isinstance(text, str):
+        return text
+    return ""
+
+
+def _backend_image_url(request: Request, filename: str) -> str:
+    base_url = str(request.base_url).rstrip("/")
+    return f"{base_url}/static/images/{filename}"
+
+
+ML_RESULT_ARTIFACT_TYPES = {"model_result", "metrics_result", "feature_importance_result"}
+
+ML_DIRECT_TOOL_NAMES = {
+    "ml_execute",
+}
+
+FOLLOW_UP_MARKERS = (
+    "解释",
+    "刚才",
+    "之前",
+    "上一个",
+    "上个",
+    "这个结果",
+    "这结果",
+    "上面的结果",
+    "继续",
+    "follow up",
+    "follow-up",
 )
 
-# =============================================================================
-# 2. 初始化 FastAPI 应用
-# =============================================================================
+CHART_MARKERS = (
+    "画图",
+    "绘图",
+    "生成图",
+    "生成一个图",
+    "图表",
+    "柱状图",
+    "折线图",
+    "散点图",
+    "直方图",
+    "热力图",
+    "可视化",
+    "chart",
+    "plot",
+    "visualize",
+)
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _looks_like_follow_up_request(message: str) -> bool:
+    normalized = _normalize_text(message)
+    return any(marker.lower() in normalized for marker in FOLLOW_UP_MARKERS)
+
+
+def _looks_like_chart_request(message: str) -> bool:
+    normalized = _normalize_text(message)
+    return any(marker.lower() in normalized for marker in CHART_MARKERS)
+
+
+_ML_EXPLICIT_TERMS = (
+    "train a model",
+    "train a logistic regression model",
+    "train a linear regression model",
+    "train model",
+    "build a model",
+    "build model",
+    "fit model",
+    "baseline model",
+    "classifier",
+    "classification model",
+    "logistic regression",
+    "linear regression",
+    "predict",
+    "prediction",
+    "forecast",
+    "evaluate model",
+    "model metrics",
+    "metrics",
+    "feature importance",
+    "coefficients",
+    "coefficient",
+    "训练模型",
+    "训练一个模型",
+    "训练一个 baseline",
+    "baseline model",
+    "分类器",
+    "分类模型",
+    "逻辑回归",
+    "线性回归",
+    "预测",
+    "预测一下",
+    "模型指标",
+    "特征重要性",
+    "重要特征",
+    "准确率",
+    "精确率",
+    "召回率",
+    "f1",
+    "roc auc",
+)
+
+
+def _looks_like_explicit_ml_request(message: str, *, prior_analysis_active: bool = False) -> bool:
+    normalized = _normalize_text(message)
+    if not normalized:
+        return False
+    if _looks_like_follow_up_request(normalized) and any(
+        token in normalized for token in ("model", "模型", "指标", "metrics", "feature importance", "重要特征")
+    ):
+        return True
+    return any(term in normalized for term in _ML_EXPLICIT_TERMS)
+
+
+def _looks_like_explicit_chart_request(message: str) -> bool:
+    return _looks_like_chart_request(message)
+
+
+def _build_follow_up_context_message(dataset_id: str, latest_user_message: str) -> dict[str, object] | None:
+    if not _looks_like_follow_up_request(latest_user_message):
+        return None
+
+    latest_artifact = artifact_registry.get_latest(dataset_id)
+    if not isinstance(latest_artifact, dict):
+        return None
+
+    artifact_type = str(latest_artifact.get("artifact_type", "unknown"))
+    if artifact_type == "schema_profile":
+        summary = {
+            "artifact_type": artifact_type,
+            "artifact_id": latest_artifact.get("artifact_id"),
+            "dataset_id": latest_artifact.get("dataset_id"),
+            "columns": latest_artifact.get("columns"),
+            "warnings": latest_artifact.get("warnings", []),
+        }
+    elif artifact_type in ML_RESULT_ARTIFACT_TYPES:
+        summary = {
+            "artifact_type": artifact_type,
+            "artifact_id": latest_artifact.get("artifact_id"),
+            "dataset_id": latest_artifact.get("dataset_id"),
+            "target": latest_artifact.get("target"),
+            "model_type": latest_artifact.get("model_type"),
+            "metrics": latest_artifact.get("metrics", {}),
+            "items": latest_artifact.get("items", latest_artifact.get("coefficient_items", [])),
+            "warnings": latest_artifact.get("warnings", []),
+        }
+    else:
+        summary = {
+            "artifact_type": artifact_type,
+            "artifact_id": latest_artifact.get("artifact_id"),
+            "dataset_id": latest_artifact.get("dataset_id"),
+            "warnings": latest_artifact.get("warnings", []),
+        }
+
+    return {
+        "type": "assistant",
+        "content": (
+            "最近一次结构化结果，供解释或跟进使用：\n"
+            f"{json.dumps(summary, ensure_ascii=False)}"
+        ),
+    }
+
+
+def _extract_structured_artifact_type(text: str) -> str | None:
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        payload = json.loads(stripped)
+    except Exception:
+        return None
+    artifact_type = payload.get("artifact_type")
+    return artifact_type if isinstance(artifact_type, str) else None
+
+
 app = FastAPI(
     title="Data Agent Backend",
-    version="1.0",
-    description="DeepSeek Data Analysis Agent API with LangGraph"
+    version="1.1",
+    description="Data Agent Backend with safer dataset handling",
 )
 
-# =============================================================================
-# 3. 配置 CORS (解决 Figma 跨域的关键)
-# =============================================================================
 app.add_middleware(
     CORSMiddleware,
-    # ❌ 不要用 allow_origins=["*"]，因为我们需要 allow_credentials=True
-    allow_origins=[], 
-    
-    # ✅ 使用正则动态匹配：
-    # 1. Figma 动态沙盒域名 (https://...figma.site)
-    # 2. 本地调试 (localhost, 127.0.0.1)
-    allow_origin_regex=r"https://.*\.figma\.site|http://localhost.*|http://127\.0\.0\.1.*",
-    
+    allow_origins=_resolve_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# =============================================================================
-# 4. 挂载静态文件 (用于图片展示)
-# =============================================================================
-# 确保目录存在
-static_dir = os.path.join(os.getcwd(), "static")
-images_dir = os.path.join(static_dir, "images")
-os.makedirs(images_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# 挂载 /static 路径
-# 前端通过 http://localhost:8002/static/images/xxx.png 访问图片
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# =============================================================================
-# 5. 定义请求模型
-# =============================================================================
-class CorrelationRequest(BaseModel):
-    col1: str
-    col2: str
+async def _artifact_cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(ARTIFACT_CLEANUP_INTERVAL_SECONDS)
+        try:
+            summary = cleanup_expired_artifacts(temp_dir=TEMP_DATA_DIR, images_dir=IMAGES_DIR)
+            logger.info("Expired artifacts cleaned", extra=summary)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Artifact cleanup loop failed")
 
-# =============================================================================
-# 6. 核心接口定义
-# =============================================================================
+
+@app.on_event("startup")
+async def startup_artifact_cleanup() -> None:
+    summary = cleanup_expired_artifacts(temp_dir=TEMP_DATA_DIR, images_dir=IMAGES_DIR)
+    logger.info("Startup artifact cleanup completed", extra=summary)
+    app.state.artifact_cleanup_task = asyncio.create_task(_artifact_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_artifact_cleanup() -> None:
+    task = getattr(app.state, "artifact_cleanup_task", None)
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+@app.exception_handler(DatasetNotFoundError)
+async def handle_dataset_not_found(request: Request, exc: DatasetNotFoundError) -> JSONResponse:
+    return error_response(exc.status_code, exc.code, exc.message)
+
+
+@app.exception_handler(DatasetLoadError)
+async def handle_dataset_load_error(request: Request, exc: DatasetLoadError) -> JSONResponse:
+    return error_response(exc.status_code, exc.code, exc.message)
+
+
+@app.exception_handler(AppError)
+async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+    return error_response(exc.status_code, exc.code, exc.message)
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return error_response(422, "validation_error", "请求参数不合法，请检查后重试。")
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled server exception")
+    return error_response(500, "internal_error", "服务器内部错误，请稍后重试。")
+
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     return {"status": "ok", "message": "Data Agent Backend is running"}
 
-# --- 接口 A: 上传 CSV ---
+
+@app.get("/data-preview")
+async def data_preview(dataset_id: str) -> dict[str, object]:
+    dataset = get_dataset(dataset_id)
+    return {
+        "status": "success",
+        "dataset_id": dataset.dataset_id,
+        "preview": get_data_preview(dataset.dataset_id),
+        "original_filename": dataset.original_filename,
+        "original_row_count": dataset.original_row_count,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "preview_count": dataset.preview_count,
+        "columns": dataset.columns,
+        "filename": dataset.original_filename,
+        "analysis_basis": dataset.analysis_basis,
+        "preprocessed": dataset.preprocessed,
+        "preprocessing_log": dataset.preprocessing_log,
+        "schema_profile": dataset.schema_profile_artifact,
+        "analysis_preprocess": dataset.analysis_preprocess_artifact,
+        "model_prep_plan": dataset.model_prep_plan_artifact,
+    }
+
+
 @app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
-    """
-    前端上传 CSV 文件，后端保存并加载到内存 DataFrame
-    """
-    if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="只支持 CSV 文件")
+async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
+    original_filename = file.filename or "uploaded.csv"
+    if not original_filename.lower().endswith(".csv"):
+        raise AppError("invalid_file_type", "只支持 CSV 文件上传。", 400)
 
-    # 临时保存路径
-    temp_dir = "temp_data"
-    os.makedirs(temp_dir, exist_ok=True)
-    file_path = os.path.join(temp_dir, file.filename)
+    safe_filename = f"{uuid4().hex}.csv"
+    stored_path = (TEMP_DATA_DIR / safe_filename).resolve()
+    temp_dir_resolved = TEMP_DATA_DIR.resolve()
+
+    if temp_dir_resolved != stored_path.parent:
+        raise AppError("invalid_file_type", "上传路径不安全，已拒绝请求。", 400)
+
+    bytes_written = 0
 
     try:
-        # 写入磁盘
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        # 调用 data_manager 加载数据
-        success, message = load_csv_file(file_path)
-        
-        if success:
-            # 获取预览数据返回给前端
-            preview = get_data_preview()
-            return JSONResponse(content={
-                "status": "success",
-                "message": message,
-                "preview": preview,  # 前端表格数据源
-                "filename": file.filename
-            })
-        else:
-            raise HTTPException(status_code=500, detail=message)
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        with stored_path.open("wb") as target:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > MAX_UPLOAD_SIZE_BYTES:
+                    raise AppError("file_too_large", "上传文件超过 50MB 限制。", 413)
+                target.write(chunk)
 
-# --- 接口 B: 计算相关性 ---
-@app.post("/calculate-correlation")
-async def get_correlation(request: CorrelationRequest):
-    """
-    前端点击两个变量时调用此接口，快速返回相关系数
-    """
-    # 调用 data_manager 中的纯逻辑函数
-    result = calculate_correlation(request.col1, request.col2)
-    
-    # 生成简单的描述文案
-    desc = "无相关性"
-    try:
-        corr_val = float(result)
-        if abs(corr_val) > 0.8: desc = "极强相关"
-        elif abs(corr_val) > 0.6: desc = "强相关"
-        elif abs(corr_val) > 0.4: desc = "中等相关"
-        elif abs(corr_val) > 0.2: desc = "弱相关"
-    except:
-        pass
+        dataset = load_csv_file(stored_path, original_filename)
+        response = {
+            "status": "success",
+            "message": f"成功加载文件【{dataset.original_filename}】！包含 {dataset.row_count} 行，{len(dataset.columns)} 列。",
+            "dataset_id": dataset.dataset_id,
+            "original_filename": dataset.original_filename,
+            "preview": dataset.preview,
+            "analysis_basis": dataset.analysis_basis,
+            "preprocessed": dataset.preprocessed,
+            "preprocessing_log": dataset.preprocessing_log,
+            "original_row_count": dataset.original_row_count,
+            "row_count": dataset.row_count,
+            "column_count": dataset.column_count,
+            "preview_count": dataset.preview_count,
+            "columns": dataset.columns,
+            "filename": dataset.original_filename,
+            "schema_profile": dataset.schema_profile_artifact,
+            "analysis_preprocess": dataset.analysis_preprocess_artifact,
+            "model_prep_plan": dataset.model_prep_plan_artifact,
+        }
+        return JSONResponse(content=response)
+    except AppError:
+        if stored_path.exists():
+            stored_path.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected upload failure")
+        if stored_path.exists():
+            stored_path.unlink(missing_ok=True)
+        raise AppError("internal_error", "文件上传失败，请稍后重试。", 500) from exc
+    finally:
+        await file.close()
+
+
+@app.delete("/datasets/{dataset_id}")
+async def delete_dataset(dataset_id: str) -> dict[str, object]:
+    cleanup_dataset_artifacts(dataset_id)
 
     return {
         "status": "success",
-        "correlation": result,
-        "description": desc
+        "dataset_id": dataset_id,
+        "message": "数据集已删除。",
     }
 
-# --- 接口 C: Agent 对话 (LangServe) ---
-# 自动挂载 /agent/invoke, /agent/stream 等接口
-add_routes(
-    app,
-    graph,
-    path="/agent",
-)
 
-# =============================================================================
-# 7. 启动入口
-# =============================================================================
+@app.post("/calculate-correlation")
+async def get_correlation(request: CorrelationRequest) -> dict[str, object]:
+    result = calculate_correlation(request.dataset_id, request.col1, request.col2)
+    return result
+
+
+@app.post("/chat/stream", response_model=None)
+async def chat_stream(request: Request) -> StreamingResponse | JSONResponse:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise AppError("validation_error", "请求参数不合法，请检查后重试。", 422) from exc
+
+    if not isinstance(payload, dict):
+        raise AppError("validation_error", "请求参数不合法，请检查后重试。", 422)
+
+    dataset_id = _extract_dataset_id_from_payload(payload)
+    messages = _extract_messages(payload)
+    if not messages:
+        raise AppError("validation_error", "请求参数不合法，请先输入问题。", 422)
+
+    latest_user_message = _extract_latest_user_message(messages)
+    logger.info(
+        "chat_stream payload received",
+        extra={
+            "dataset_id": dataset_id,
+            "message_preview": latest_user_message[:80],
+        },
+    )
+    dataset_required_decision = get_dataset_required_decision(
+        latest_user_message,
+        dataset_columns=[],
+        prior_analysis_active=_has_prior_analysis_context(messages),
+    )
+    logger.debug("dataset-required decision: %s", dataset_required_decision.to_dict())
+    if not dataset_id and dataset_required_decision.matched:
+        raise AppError("dataset_required", "当前未选择数据集，请先上传 CSV 文件后再进行数据分析。", 400)
+
+    if not dataset_id:
+        async def general_chat_event_generator():
+            try:
+                reply = await generate_general_chat_reply(messages)
+                if reply.strip():
+                    yield _format_sse(
+                        "message_chunk",
+                        {
+                            "content": reply,
+                            "timestamp": _now_iso(),
+                        },
+                    )
+                yield _format_sse("done", {"timestamp": _now_iso()})
+            except AppError as exc:
+                yield _format_sse("error", {"code": exc.code, "message": exc.message})
+                yield _format_sse("done", {"timestamp": _now_iso()})
+            except Exception:
+                logger.exception("general chat stream failed")
+                yield _format_sse("error", {"code": "internal_error", "message": "服务器内部错误，请稍后重试。"})
+                yield _format_sse("done", {"timestamp": _now_iso()})
+
+        return StreamingResponse(
+            general_chat_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    set_current_dataset_id(dataset_id)
+
+    get_dataset(dataset_id)
+    prior_analysis_active = _has_prior_analysis_context(messages)
+    interpretation = interpret_request(
+        RoutingContext(
+            message=latest_user_message,
+            prior_analysis_active=prior_analysis_active,
+        )
+    )
+    chart_requested = _looks_like_explicit_chart_request(latest_user_message)
+    explicit_ml_request = _looks_like_explicit_ml_request(latest_user_message, prior_analysis_active=prior_analysis_active)
+    normalized_latest_user_message = _normalize_text(latest_user_message)
+    ml_needs_training = any(
+        term in _normalize_text(latest_user_message)
+        for term in (
+            "train a model",
+            "train model",
+            "build a model",
+            "build model",
+            "fit model",
+            "baseline model",
+            "classifier",
+            "classification model",
+            "logistic regression",
+            "linear regression",
+            "predict",
+            "prediction",
+            "forecast",
+            "训练模型",
+            "训练一个模型",
+            "训练一个 baseline",
+            "baseline model",
+            "分类器",
+            "分类模型",
+            "逻辑回归",
+            "线性回归",
+            "预测",
+            "预测一下",
+        )
+    )
+    ml_needs_metrics = any(
+        term in normalized_latest_user_message
+        for term in ("model metrics", "metrics", "accuracy", "precision", "recall", "f1", "auc", "roc auc", "模型指标", "准确率", "精确率", "召回率", "f1", "roc auc")
+    )
+    ml_needs_feature_importance = any(
+        term in normalized_latest_user_message
+        for term in ("feature importance", "coefficients", "coefficient", "特征重要性", "重要特征", "系数")
+    )
+    follow_up_message = _build_follow_up_context_message(dataset_id, latest_user_message)
+    messages_for_graph = list(messages)
+    if follow_up_message is not None:
+        messages_for_graph.append(follow_up_message)
+
+    async def event_generator():
+        try:
+            runtime_context = AgentContext(dataset_id=dataset_id)
+            prior_model_artifact_ids: dict[str, str | None] = {}
+            for artifact_type in ML_RESULT_ARTIFACT_TYPES:
+                prior_artifact = artifact_registry.get_latest(dataset_id, artifact_type=artifact_type)
+                prior_model_artifact_ids[artifact_type] = prior_artifact.get("artifact_id") if prior_artifact else None
+            buffered_text_chunks: list[str] = []
+            saw_ml_result = False
+            saw_chart_image = False
+            saw_ml_tool_call = False
+            produced_ml_artifact_types: set[str] = set()
+            logger.debug(
+                "starting chat stream with runtime context",
+                extra={
+                    "dataset_id": dataset_id,
+                    "has_runtime_context": True,
+                    "intent_type": interpretation.intent_type,
+                },
+            )
+            async for event in graph.astream_events(
+                {"messages": messages_for_graph},
+                config={"configurable": {"dataset_id": dataset_id}},
+                context=runtime_context,
+                version="v2",
+            ):
+                event_name = event.get("event")
+                event_name = str(event_name) if event_name is not None else ""
+                data = event.get("data") or {}
+                name = event.get("name")
+                if event_name == "on_tool_start" and isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
+                    saw_ml_tool_call = True
+
+                if event_name in {"on_chat_model_stream", "on_chain_stream"}:
+                    chunk = data.get("chunk") if isinstance(data, dict) else None
+                    text = _extract_text_from_chunk(chunk)
+                    if text:
+                        if explicit_ml_request or chart_requested:
+                            buffered_text_chunks.append(text)
+                            artifact_type = _extract_structured_artifact_type(text)
+                            if artifact_type in ML_RESULT_ARTIFACT_TYPES:
+                                current_artifact = artifact_registry.get_latest(dataset_id, artifact_type=artifact_type)
+                                prior_artifact_id = prior_model_artifact_ids.get(artifact_type)
+                                current_artifact_id = current_artifact.get("artifact_id") if current_artifact else None
+                                if current_artifact_id and current_artifact_id != prior_artifact_id:
+                                    saw_ml_result = True
+                                    produced_ml_artifact_types.add(str(artifact_type))
+                        else:
+                            yield _format_sse(
+                                "message_chunk",
+                                {
+                                    "content": text,
+                                    "dataset_id": dataset_id,
+                                    "timestamp": _now_iso(),
+                                },
+                            )
+                elif event_name == "on_tool_start":
+                    yield _format_sse(
+                        "tool_start",
+                        {
+                            "tool_name": name,
+                            "dataset_id": dataset_id,
+                            "timestamp": _now_iso(),
+                        },
+                    )
+                elif event_name == "on_tool_end":
+                    if isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
+                        for artifact_type in ML_RESULT_ARTIFACT_TYPES:
+                            current_artifact = artifact_registry.get_latest(dataset_id, artifact_type=artifact_type)
+                            prior_artifact_id = prior_model_artifact_ids.get(artifact_type)
+                            if current_artifact is not None and current_artifact.get("artifact_id") != prior_artifact_id:
+                                saw_ml_result = True
+                                produced_ml_artifact_types.add(str(artifact_type))
+
+                    tool_event = {
+                        "tool_name": name,
+                        "dataset_id": dataset_id,
+                        "timestamp": _now_iso(),
+                    }
+                    yield _format_sse("tool_end", tool_event)
+
+                    image_event = consume_current_image_event()
+                    if image_event:
+                        filename = image_event.get("filename")
+                        if isinstance(filename, str) and filename:
+                            yield _format_sse(
+                                "image_generated",
+                                {
+                                    "type": "image_generated",
+                                    "filename": filename,
+                                    "image_url": _backend_image_url(request, filename),
+                                    "tool_name": image_event.get("tool_name"),
+                                    "dataset_id": dataset_id,
+                                    "timestamp": _now_iso(),
+                                },
+                            )
+                            saw_chart_image = True
+                elif event_name == "on_chain_end":
+                    continue
+
+            if explicit_ml_request or chart_requested:
+                if explicit_ml_request and not saw_ml_tool_call:
+                    yield _format_sse(
+                        "error",
+                        {
+                            "code": "structured_failure",
+                            "message": "本次建模请求没有调用直接的 ml 工具，请先通过 ml_execute 完成建模。",
+                        },
+                    )
+                    yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+                    return
+
+                required_ml_artifacts: set[str] = set()
+                if ml_needs_training:
+                    required_ml_artifacts.add("model_result")
+                if ml_needs_metrics:
+                    required_ml_artifacts.add("metrics_result")
+                if ml_needs_feature_importance:
+                    required_ml_artifacts.add("feature_importance_result")
+
+                missing_ml_artifacts = required_ml_artifacts - produced_ml_artifact_types
+                if explicit_ml_request and missing_ml_artifacts:
+                    yield _format_sse(
+                        "error",
+                        {
+                            "code": "structured_failure",
+                            "message": f"本次建模请求缺少结构化结果：{', '.join(sorted(missing_ml_artifacts))}。",
+                        },
+                    )
+                    yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+                    return
+
+                if chart_requested and not saw_chart_image:
+                    yield _format_sse(
+                        "error",
+                        {
+                            "code": "structured_failure",
+                            "message": "本次图表请求没有成功生成可展示的图片结果，请检查字段名或图表描述后重试。",
+                        },
+                    )
+                    yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+                    return
+
+                for text in buffered_text_chunks:
+                    yield _format_sse(
+                        "message_chunk",
+                        {
+                            "content": text,
+                            "dataset_id": dataset_id,
+                            "timestamp": _now_iso(),
+                        },
+                    )
+
+            yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+        except AppError as exc:
+            yield _format_sse("error", {"code": exc.code, "message": exc.message})
+            yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+        except Exception:
+            logger.exception("chat stream failed", extra={"dataset_id": dataset_id})
+            yield _format_sse("error", {"code": "internal_error", "message": "服务器内部错误，请稍后重试。"})
+            yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+        finally:
+            set_current_dataset_id(None)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+if IS_DEVELOPMENT:
+    try:
+        from langserve import add_routes
+    except Exception:
+        logger.warning("langserve 未安装或导入失败，开发环境将跳过 /agent 路由注入。")
+    else:
+        add_routes(
+            app,
+            graph,
+            path="/agent",
+            config_keys=["configurable"],
+            playground_type="default",
+        )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    dataset_id: str | None = None
+    body = b""
+    should_rebuild = request.headers.get("content-type", "").startswith("application/json")
+
+    if should_rebuild:
+        body = await request.body()
+        if body:
+            try:
+                payload = json.loads(body)
+                if request.url.path.startswith("/agent") or request.url.path.startswith("/chat/stream"):
+                    dataset_id = _extract_dataset_id_from_payload(payload)
+                elif request.url.path.startswith("/calculate-correlation"):
+                    if isinstance(payload, dict):
+                        payload_dataset = payload.get("dataset_id")
+                        if isinstance(payload_dataset, str):
+                            dataset_id = payload_dataset
+                elif request.url.path.startswith("/datasets/"):
+                    dataset_id = request.url.path.rsplit("/", 1)[-1]
+            except Exception:
+                dataset_id = None
+
+        async def receive() -> dict[str, object]:
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = Request(request.scope, receive)
+
+    if request.url.path.startswith("/agent"):
+        set_current_dataset_id(dataset_id)
+
+    response = await call_next(request)
+    error_code = response.headers.get("X-Error-Code")
+    logger.info(
+        "%s %s status=%s dataset_id=%s error_code=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        dataset_id,
+        error_code,
+    )
+
+    if request.url.path.startswith("/agent"):
+        set_current_dataset_id(None)
+
+    return response
+
+
 if __name__ == "__main__":
-    print(">>> 启动 Data Agent 后端服务...")
-    print(">>> API 文档地址: http://localhost:8002/docs")
-    print(">>> 图片存储路径:", images_dir)
-    
-    # 启动服务，端口 8002
+    logger.info("Starting Data Agent backend", extra={"port": 8002, "images_dir": str(IMAGES_DIR)})
     uvicorn.run("src.server:app", host="0.0.0.0", port=8002, reload=True)

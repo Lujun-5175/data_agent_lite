@@ -101,8 +101,19 @@ tmp/
 temp/
 *.tmp
 *.temp
+_verify_upload_*.csv
 .tmp/
 .temp/
+backend/temp_data/
+backend/static/images/
+frontend/build/
+test-results/
+.claude/
+.playwright-cli/
+*.zip
+public/*.png
+!public/show.png
+!public/fig.png
 
 # 数据文件（根据项目需要调整）
 # *.csv

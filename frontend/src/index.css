@@ -2725,8 +2725,6 @@
       color: var(--accent-foreground);
     }
   }
-}
-
 :root {
   --font-size: 16px;
   --background: #fff;

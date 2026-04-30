@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+
+def test_chat_stream_requires_dataset_for_dataset_specific_prompt(client: TestClient):
+    response = client.post(
+        "/chat/stream",
+        json={
+            "input": {
+                "messages": [
+                    {
+                        "type": "human",
+                        "content": "请根据这份数据做相关性分析",
+                    }
+                ]
+            }
+        },
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "dataset_required"
+    assert "请先上传 CSV 文件" in payload["error"]["message"]
+
+
+def test_error_payload_shape_stable(client: TestClient):
+    response = client.post(
+        "/upload",
+        files={"file": ("invalid.txt", b"not csv", "text/plain")},
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert set(payload.keys()) == {"error"}
+    assert set(payload["error"].keys()) == {"code", "message"}
+    assert payload["error"]["code"] == "invalid_file_type"
+
+
+def test_correlation_invalid_columns_returns_safe_error(client: TestClient):
+    upload_response = client.post(
+        "/upload",
+        files={"file": ("corr.csv", b"a,b\n1,2\n3,4\n", "text/csv")},
+    )
+    assert upload_response.status_code == 200
+    dataset_id = upload_response.json()["dataset_id"]
+
+    response = client.post(
+        "/calculate-correlation",
+        json={"dataset_id": dataset_id, "col1": "a", "col2": "missing_col"},
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "dataset_load_error"
