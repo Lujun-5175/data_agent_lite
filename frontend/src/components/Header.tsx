@@ -18,7 +18,7 @@ export function Header({ onChatClear }: HeaderProps) {
             <div className="truncate text-[15px] font-semibold tracking-tight text-slate-900">Data Agent</div>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
               <CircleDot className="h-3 w-3 fill-emerald-500 text-emerald-500" />
-              <span>Single-column chat</span>
+              <span>单栏数据分析聊天</span>
             </div>
           </div>
         </div>

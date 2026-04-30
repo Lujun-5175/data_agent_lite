@@ -240,13 +240,13 @@ function SampleDataPanel({
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <BarChart3 className="h-3.5 w-3.5" />
-            Try with Sample Data
+            示例数据一键试用
           </div>
           <h2 className="mt-3 text-lg font-semibold tracking-tight text-slate-950 md:text-xl">
-            Start exploring in one click
+            选择一个示例数据集，立即开始体验
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-            Pick a realistic dataset and jump straight into analysis, charts, and statistical tests.
+            不需要准备 CSV，点击加载后即可测试数据预览、统计分析、图表生成和建模流程。
           </p>
         </div>
       </div>
@@ -269,16 +269,16 @@ function SampleDataPanel({
                 </div>
               </div>
               <div className="mt-4 rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
-                {sample.columnCount} columns x {sample.rowCount.toLocaleString()} rows
+                {sample.columnCount} 列 x {sample.rowCount.toLocaleString()} 行
               </div>
-              <Button
+              <button
                 type="button"
                 onClick={() => onSelect(sample)}
                 disabled={disabled || isLoading}
-                className="mt-auto h-11 rounded-[14px] border border-slate-900 bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800"
+                className="mt-4 flex min-h-11 w-full items-center justify-center rounded-[14px] border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_6px_16px_rgba(15,23,42,0.08)] transition-colors hover:border-slate-900 hover:bg-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
               >
-                {isLoading ? 'Loading sample data...' : 'Try this dataset'}
-              </Button>
+                {isLoading ? '加载中...' : '加载'}
+              </button>
             </article>
           );
         })}
@@ -300,7 +300,7 @@ function SuggestedPrompts({
 
   return (
     <div className="rounded-[18px] border border-slate-200/80 bg-white/78 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Suggested prompts</div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">推荐问题</div>
       <div className="flex flex-wrap gap-2">
         {prompts.map((prompt) => (
           <button
@@ -458,7 +458,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
       ]);
       toast.success(
         options?.sample
-          ? `Sample dataset loaded: ${options.sample.name}`
+          ? `示例数据已加载：${options.sample.name}`
           : result.message || `成功加载文件【${dataset.filename}】`
       );
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -481,13 +481,13 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
     try {
       const response = await fetch(sample.path);
       if (!response.ok) {
-        throw new Error(`Unable to load sample dataset: ${sample.filename}`);
+        throw new Error(`示例数据加载失败：${sample.filename}`);
       }
       const csvBlob = await response.blob();
       const csvFile = new File([csvBlob], sample.filename, { type: 'text/csv' });
       await handleFileSelect(csvFile, { sample });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to load sample dataset';
+      const message = error instanceof Error ? error.message : '示例数据加载失败';
       setMessages((prev) => [
         ...prev,
         { id: `error-${Date.now()}`, type: 'assistant', kind: 'error', content: message, timestamp: new Date() },
