@@ -638,8 +638,10 @@ def _merge_suggested_plan(
     return list(dict.fromkeys(merged))
 
 
-def interpret_request(context: RoutingContext) -> IntentInterpretation:
+def interpret_request(context: RoutingContext, *, use_llm: bool = True) -> IntentInterpretation:
     fallback_intent = _heuristic_interpret_request(context)
+    if not use_llm:
+        return fallback_intent
     llm_intent = plan_intent_with_llm(
         context.message,
         dataset_columns=context.dataset_columns,

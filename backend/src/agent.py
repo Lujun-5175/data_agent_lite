@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -277,9 +276,9 @@ def dataset_context_middleware(request) -> str:
             message=latest_user_message,
             dataset_columns=dataset_columns,
             prior_analysis_active=bool(dataset_id),
-        )
+        ),
+        use_llm=False,
     )
-    interpretation_json = json.dumps(interpretation.to_dict(), ensure_ascii=False)
     stats_decision = get_stats_intent_decision(
         latest_user_message,
         dataset_columns=dataset_columns,
@@ -289,12 +288,12 @@ def dataset_context_middleware(request) -> str:
     logger.debug("request interpretation: %s", interpretation.to_dict())
     if interpretation.intent_type == "ml":
         route_hint = (
-            "这是明确建模请求。先基于 interpretation 里的 deliverables 和 suggested_plan 选择最小必要步骤，"
+            "这是明确建模请求。选择最小必要步骤，"
             "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
         )
     elif interpretation.intent_type == "mixed":
         route_hint = (
-            "这是混合工作流。先执行 analysis 部分，再按 suggested_plan 继续是否需要 `ml_execute`。"
+            "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
             "不要把探索性分析直接升级成建模。"
         )
     elif interpretation.intent_type == "chart":
@@ -318,13 +317,10 @@ def dataset_context_middleware(request) -> str:
 【数据集摘要】
 {data_context}
 
-【请求解释器输出】
-{interpretation_json}
-
 【你的职责】
 1. 对“基于数据的问题”优先调用工具：数据理解/预处理问题优先 `profile.*`，统计分析优先 `stats.*`，明确建模请求再用 `ml_execute`，图表需求用 `fig_inter`。
 2. 变量 `df` 是只读数据视图；`data`、`viz`、`stats`、`profile`、`ml` 是白名单 helper API。优先用 helper API，不要依赖未声明能力。
-   对于明确建模请求，先读 interpretation 再决定是否调用 `ml_execute`；不要把分析性请求误判成建模请求。
+   对于明确建模请求，先判断是否确实需要训练/评估模型再决定是否调用 `ml_execute`；不要把分析性请求误判成建模请求。
    对于探索性分析、过滤、聚合、比较、概览，请优先使用 `python_inter` 或 `stats.*`，必要时再补 `ml_execute`。
 3. 只能基于当前数据集和工具输出作答；禁止臆测缺失数据、禁止虚构计算结果。
 4. 分析时先完成计算再回答，不要只给思路。若结果为空或样本不足，要明确说明并给出可执行下一步。
