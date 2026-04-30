@@ -94,6 +94,30 @@ class _AnalysisOnlyGraph:
         yield {"event": "on_tool_end", "name": "python_inter", "data": {}}
 
 
+class _InternalPlannerLeakGraph:
+    async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
+        intent_payload = json.dumps(
+            {
+                "intent_type": "followup",
+                "requires_ml": False,
+                "requires_chart": False,
+                "requires_python_analysis": False,
+                "deliverables": [],
+                "reasoning_summary": "internal planner note",
+                "suggested_plan": ["do not show this"],
+            },
+            ensure_ascii=False,
+        )
+        yield {"event": "on_chain_stream", "name": "intent-planner", "data": {"chunk": intent_payload}}
+        yield {"event": "on_chat_model_stream", "name": "intent-planner", "data": {"chunk": intent_payload}}
+        yield {
+            "event": "on_chat_model_stream",
+            "name": "golden-model",
+            "data": {"chunk": "以下是该数据集的完整讲解。"},
+        }
+        yield {"event": "on_chain_end", "name": "golden-chain", "data": {}}
+
+
 class _MixedWorkflowGraph:
     async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
         dataset_id = config.get("configurable", {}).get("dataset_id")
@@ -209,6 +233,23 @@ def test_exploratory_analysis_request_is_not_forced_into_ml_validation(monkeypat
     assert not errors
     text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
     assert "探索性分析" in text or "分组比较" in text
+
+
+@pytest.mark.usefixtures("client")
+def test_stream_suppresses_internal_intent_payloads(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    monkeypatch.setattr(server, "graph", _InternalPlannerLeakGraph())
+    dataset_id = _upload_telco_fixture_dataset(client)
+    events = _stream_events(
+        client,
+        dataset_id,
+        [{"type": "human", "content": "讲解一下这个数据集"}],
+    )
+
+    text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
+    assert "以下是该数据集的完整讲解" in text
+    assert "intent_type" not in text
+    assert "reasoning_summary" not in text
+    assert "suggested_plan" not in text
 
 
 @pytest.mark.usefixtures("client")

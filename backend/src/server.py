@@ -351,6 +351,27 @@ def _extract_structured_artifact_type(text: str) -> str | None:
     return artifact_type if isinstance(artifact_type, str) else None
 
 
+def _looks_like_internal_intent_payload(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        return False
+    try:
+        payload = json.loads(stripped)
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    intent_keys = {
+        "intent_type",
+        "requires_ml",
+        "requires_chart",
+        "requires_python_analysis",
+        "reasoning_summary",
+        "suggested_plan",
+    }
+    return "intent_type" in payload and len(intent_keys.intersection(payload)) >= 3
+
+
 app = FastAPI(
     title="Data Agent Backend",
     version="1.1",
@@ -677,9 +698,14 @@ async def chat_stream(request: Request) -> StreamingResponse | JSONResponse:
                 if event_name == "on_tool_start" and isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
                     saw_ml_tool_call = True
 
-                if event_name in {"on_chat_model_stream", "on_chain_stream"}:
+                if event_name == "on_chain_stream":
+                    continue
+
+                if event_name == "on_chat_model_stream":
                     chunk = data.get("chunk") if isinstance(data, dict) else None
                     text = _extract_text_from_chunk(chunk)
+                    if _looks_like_internal_intent_payload(text):
+                        continue
                     if text:
                         if explicit_ml_request or chart_requested:
                             buffered_text_chunks.append(text)
