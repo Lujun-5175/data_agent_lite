@@ -23,11 +23,11 @@ describe('api config', () => {
     expect(module.API_BASE_URL).toBe('http://127.0.0.1:8002');
   });
 
-  it('ignores localhost override in production builds', async () => {
+  it('uses same-origin proxy in production builds', async () => {
     vi.resetModules();
     vi.stubEnv('DEV', false);
     vi.stubEnv('PROD', true);
-    vi.stubEnv('VITE_API_BASE_URL', 'http://127.0.0.1:8002');
+    vi.stubEnv('VITE_API_BASE_URL', 'https://dataagentlite-production.up.railway.app');
 
     const module = await import('./api');
     expect(module.API_BASE_URL).toBe('/api');

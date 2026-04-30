@@ -1,17 +1,13 @@
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8002';
 const PRODUCTION_API_PROXY_BASE_URL = '/api';
 
-function isLocalhostUrl(value: string) {
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(value);
-}
-
 function resolveApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL?.trim();
-  if (configured && (import.meta.env.DEV || !isLocalhostUrl(configured))) {
+  if (import.meta.env.PROD) return PRODUCTION_API_PROXY_BASE_URL;
+  if (configured) {
     return configured.replace(/\/+$/, '');
   }
-  if (import.meta.env.DEV) return DEFAULT_API_BASE_URL;
-  return PRODUCTION_API_PROXY_BASE_URL;
+  return DEFAULT_API_BASE_URL;
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
