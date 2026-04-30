@@ -883,5 +883,7 @@ async def request_logging_middleware(request: Request, call_next):
 
 
 if __name__ == "__main__":
-    logger.info("Starting Data Agent backend", extra={"port": 8002, "images_dir": str(IMAGES_DIR)})
-    uvicorn.run("src.server:app", host="0.0.0.0", port=8002, reload=True)
+    port = int(os.getenv("PORT", "8002"))
+    reload_enabled = IS_DEVELOPMENT
+    logger.info("Starting Data Agent backend", extra={"port": port, "images_dir": str(IMAGES_DIR)})
+    uvicorn.run("src.server:app", host="0.0.0.0", port=port, reload=reload_enabled)
