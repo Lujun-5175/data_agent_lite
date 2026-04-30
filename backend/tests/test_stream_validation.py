@@ -281,7 +281,7 @@ def test_stream_strips_internal_intent_payload_prefix(monkeypatch: pytest.Monkey
     events = _stream_events(
         client,
         dataset_id,
-        [{"type": "human", "content": "讲解数据集"}],
+        [{"type": "human", "content": "请全面分析这个数据集"}],
     )
 
     text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")

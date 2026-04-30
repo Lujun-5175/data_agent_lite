@@ -50,3 +50,46 @@ def test_correlation_invalid_columns_returns_safe_error(client: TestClient):
     assert response.status_code == 400
     payload = response.json()
     assert payload["error"]["code"] == "dataset_load_error"
+
+
+def test_dataset_overview_request_streams_metadata_without_agent_loop(client: TestClient):
+    upload_response = client.post(
+        "/upload",
+        files={
+            "file": (
+                "sales_sample.csv",
+                (
+                    b"order_date,total_amount,product_category,region,channel\n"
+                    b"2025-01-01,120.5,Electronics,West,Online\n"
+                    b"2025-01-02,88.0,Home,East,Offline\n"
+                ),
+                "text/csv",
+            )
+        },
+    )
+    assert upload_response.status_code == 200
+    dataset_id = upload_response.json()["dataset_id"]
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "input": {
+                "messages": [
+                    {
+                        "type": "human",
+                        "content": "讲解数据集",
+                    }
+                ]
+            },
+            "config": {"configurable": {"dataset_id": dataset_id}},
+        },
+    )
+
+    assert response.status_code == 200
+    assert "event: message_chunk" in response.text
+    assert "sales_sample.csv" in response.text
+    assert "2 行" in response.text
+    assert "5 列" in response.text
+    assert "每月销售额趋势是什么" in response.text
+    assert "internal_error" not in response.text

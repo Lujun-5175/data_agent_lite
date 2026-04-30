@@ -422,6 +422,101 @@ def _strip_internal_intent_payload_prefix(text: str) -> str:
     return text
 
 
+DATASET_OVERVIEW_MARKERS = (
+    "讲解数据集",
+    "介绍数据集",
+    "解释数据集",
+    "数据集概览",
+    "数据集说明",
+    "看看数据集",
+    "了解数据集",
+    "describe dataset",
+    "explain dataset",
+    "summarize dataset",
+    "dataset overview",
+)
+
+
+def _looks_like_dataset_overview_request(message: str) -> bool:
+    normalized = _normalize_text(message)
+    return any(marker in normalized for marker in DATASET_OVERVIEW_MARKERS)
+
+
+def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
+    if not columns:
+        return "暂无"
+    visible_columns = columns[:limit]
+    suffix = f" 等 {len(columns)} 列" if len(columns) > limit else ""
+    return "、".join(visible_columns) + suffix
+
+
+def _build_recommended_dataset_questions(column_names: set[str]) -> list[str]:
+    if {"order_date", "total_amount", "product_category", "region", "channel"}.issubset(column_names):
+        return [
+            "每月销售额趋势是什么？请画一张折线图。",
+            "哪个商品品类收入最高？请按区域对比。",
+            "比较线上和线下渠道的 total_amount，做一个 t 检验。",
+        ]
+    if {"study_hours", "attendance_rate", "final_score", "gender"}.issubset(column_names):
+        return [
+            "study_hours 和 final_score 的相关性是多少？",
+            "用 study_hours 和 attendance_rate 预测 final_score，跑一个线性回归。",
+            "男女学生成绩是否有显著差异？请做 t 检验。",
+        ]
+    if {"conversion_flag", "ab_group", "channel_source", "session_count"}.issubset(column_names):
+        return [
+            "比较 A/B 组的 conversion_flag 转化率，并做卡方检验。",
+            "哪个 channel_source 的转化率最高？",
+            "按 session_count 给用户分层，并可视化分布。",
+        ]
+    return [
+        "请先做一份描述性统计，并指出值得关注的字段。",
+        "哪些数值字段之间可能存在相关性？",
+        "按一个关键分类字段分组，比较主要指标差异。",
+    ]
+
+
+def _build_dataset_overview_reply(dataset: object) -> str:
+    columns = getattr(dataset, "columns", [])
+    column_names = [
+        str(column.get("name"))
+        for column in columns
+        if isinstance(column, dict) and column.get("name")
+    ]
+    numeric_columns = [
+        str(column.get("name"))
+        for column in columns
+        if isinstance(column, dict) and column.get("type") == "numerical" and column.get("name")
+    ]
+    categorical_columns = [
+        str(column.get("name"))
+        for column in columns
+        if isinstance(column, dict) and column.get("type") != "numerical" and column.get("name")
+    ]
+    schema_profile = getattr(dataset, "schema_profile_artifact", {})
+    warnings = schema_profile.get("warnings", []) if isinstance(schema_profile, dict) else []
+    warning_lines = [str(item) for item in warnings[:3] if item]
+    recommendation_lines = _build_recommended_dataset_questions(set(column_names))
+
+    lines = [
+        "这份数据集已经加载好了，我先帮你快速讲解一下：",
+        "",
+        f"- 文件名：{getattr(dataset, 'original_filename', 'uploaded.csv')}",
+        f"- 数据规模：{getattr(dataset, 'row_count', 0):,} 行 × {getattr(dataset, 'column_count', 0):,} 列",
+        f"- 分析基准：{getattr(dataset, 'analysis_basis', 'raw_df')}",
+        f"- 数值字段：{_format_column_list(numeric_columns)}",
+        f"- 分类/日期字段：{_format_column_list(categorical_columns)}",
+    ]
+
+    if warning_lines:
+        lines.extend(["", "我也注意到几个数据质量/字段类型提示："])
+        lines.extend(f"- {warning}" for warning in warning_lines)
+
+    lines.extend(["", "你可以直接点上方推荐问题，或者从这些方向开始："])
+    lines.extend(f"- {question}" for question in recommendation_lines)
+    return "\n".join(lines)
+
+
 app = FastAPI(
     title="Data Agent Backend",
     version="1.1",
@@ -663,7 +758,32 @@ async def chat_stream(request: Request) -> StreamingResponse | JSONResponse:
 
     set_current_dataset_id(dataset_id)
 
-    get_dataset(dataset_id)
+    dataset = get_dataset(dataset_id)
+    if _looks_like_dataset_overview_request(latest_user_message):
+        async def dataset_overview_event_generator():
+            try:
+                yield _format_sse(
+                    "message_chunk",
+                    {
+                        "content": _build_dataset_overview_reply(dataset),
+                        "dataset_id": dataset_id,
+                        "timestamp": _now_iso(),
+                    },
+                )
+                yield _format_sse("done", {"dataset_id": dataset_id, "timestamp": _now_iso()})
+            finally:
+                set_current_dataset_id(None)
+
+        return StreamingResponse(
+            dataset_overview_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     prior_analysis_active = _has_prior_analysis_context(messages)
     interpretation = interpret_request(
         RoutingContext(
