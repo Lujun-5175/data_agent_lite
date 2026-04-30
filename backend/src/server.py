@@ -54,8 +54,23 @@ TEMP_DATA_DIR = (BACKEND_ROOT / "temp_data").resolve()
 MAX_UPLOAD_SIZE_BYTES = SETTINGS.max_upload_size_bytes
 UPLOAD_CHUNK_SIZE = SETTINGS.upload_chunk_size
 ARTIFACT_CLEANUP_INTERVAL_SECONDS = SETTINGS.artifact_cleanup_interval_seconds
-APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", os.getenv("FASTAPI_ENV", "production"))).strip().lower()
-IS_DEVELOPMENT = APP_ENV in {"dev", "development", "local"}
+PRODUCTION_ENV_MARKERS = (
+    "RAILWAY_ENVIRONMENT",
+    "RAILWAY_ENVIRONMENT_NAME",
+    "RAILWAY_PROJECT_ID",
+    "RENDER",
+    "FLY_APP_NAME",
+)
+
+
+def _default_app_env() -> str:
+    if any(os.getenv(name) for name in PRODUCTION_ENV_MARKERS):
+        return "production"
+    return "development"
+
+
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", os.getenv("FASTAPI_ENV", _default_app_env()))).strip().lower()
+IS_DEVELOPMENT = APP_ENV in {"dev", "development", "local", "test"}
 DEV_CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -72,9 +87,10 @@ def _resolve_cors_origins() -> list[str]:
     configured = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
     if configured:
         return [origin.strip() for origin in configured.split(",") if origin.strip()]
-    # Keep local development usable out of the box with explicit local origins.
-    # Production deployments should provide CORS_ALLOW_ORIGINS explicitly.
-    return DEV_CORS_ORIGINS
+    if IS_DEVELOPMENT:
+        # Keep local development usable out of the box with explicit local origins.
+        return DEV_CORS_ORIGINS
+    raise RuntimeError("CORS_ALLOW_ORIGINS must be configured when APP_ENV is production.")
 
 
 class CorrelationRequest(BaseModel):

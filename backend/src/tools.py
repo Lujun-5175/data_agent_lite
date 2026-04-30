@@ -175,6 +175,8 @@ class SafeCodeValidator(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         if node.attr.startswith("_"):
             raise SafeExecutionError(f"不允许访问敏感属性: {node.attr}")
+        if node.attr in FORBIDDEN_METHOD_NAMES:
+            raise SafeExecutionError(f"不允许访问危险函数: {node.attr}")
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
@@ -1081,11 +1083,12 @@ class ReadOnlyDataFrameProxy:
         return int(len(self._source.index))
 
     def __getitem__(self, key: Any) -> Any:
+        key = _unwrap_read_only_pandas_proxy(key)
         value = self._source.__getitem__(key)
         if isinstance(value, pd.DataFrame):
-            return value.copy(deep=True)
+            return ReadOnlyDataFrameProxy(value)
         if isinstance(value, pd.Series):
-            return value.copy(deep=True)
+            return ReadOnlySeriesProxy(value)
         return value
 
     def __getattr__(self, name: str) -> Any:
@@ -1103,12 +1106,111 @@ class ReadOnlyDataFrameProxy:
         def _wrapped(*args: Any, **kwargs: Any) -> Any:
             result = attr(*args, **kwargs)
             if isinstance(result, pd.DataFrame):
-                return result.copy(deep=True)
+                return ReadOnlyDataFrameProxy(result)
             if isinstance(result, pd.Series):
-                return result.copy(deep=True)
+                return ReadOnlySeriesProxy(result)
             return result
 
         return _wrapped
+
+
+class ReadOnlySeriesProxy:
+    """Read-only Series view returned from dataframe indexing."""
+
+    _ALLOWED_METHODS = {
+        "corr",
+        "describe",
+        "drop_duplicates",
+        "dropna",
+        "head",
+        "isna",
+        "mean",
+        "median",
+        "nunique",
+        "quantile",
+        "sort_values",
+        "sum",
+        "tail",
+        "tolist",
+        "unique",
+        "value_counts",
+    }
+
+    def __init__(self, series: pd.Series):
+        self._source = series.copy(deep=True)
+
+    @property
+    def name(self) -> Any:
+        return self._source.name
+
+    @property
+    def dtype(self) -> Any:
+        return self._source.dtype
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return tuple(self._source.shape)
+
+    def __len__(self) -> int:
+        return int(len(self._source.index))
+
+    def __getitem__(self, key: Any) -> Any:
+        key = _unwrap_read_only_pandas_proxy(key)
+        value = self._source.__getitem__(key)
+        if isinstance(value, pd.Series):
+            return ReadOnlySeriesProxy(value)
+        return value
+
+    def __iter__(self):
+        return iter(self._source.copy(deep=True))
+
+    def __eq__(self, other: Any) -> pd.Series:  # type: ignore[override]
+        return self._source.eq(_unwrap_read_only_pandas_proxy(other))
+
+    def __ne__(self, other: Any) -> pd.Series:  # type: ignore[override]
+        return self._source.ne(_unwrap_read_only_pandas_proxy(other))
+
+    def __lt__(self, other: Any) -> pd.Series:
+        return self._source.lt(_unwrap_read_only_pandas_proxy(other))
+
+    def __le__(self, other: Any) -> pd.Series:
+        return self._source.le(_unwrap_read_only_pandas_proxy(other))
+
+    def __gt__(self, other: Any) -> pd.Series:
+        return self._source.gt(_unwrap_read_only_pandas_proxy(other))
+
+    def __ge__(self, other: Any) -> pd.Series:
+        return self._source.ge(_unwrap_read_only_pandas_proxy(other))
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise SafeExecutionError(f"不允许访问敏感属性: {name}")
+        if name in FORBIDDEN_METHOD_NAMES:
+            raise SafeExecutionError(f"不允许调用危险函数: {name}")
+        if name not in self._ALLOWED_METHODS:
+            raise SafeExecutionError(f"Series 当前仅支持只读访问，属性不可用: {name}")
+
+        attr = getattr(self._source, name)
+        if not callable(attr):
+            return attr
+
+        def _wrapped(*args: Any, **kwargs: Any) -> Any:
+            result = attr(*args, **kwargs)
+            if isinstance(result, pd.DataFrame):
+                return ReadOnlyDataFrameProxy(result)
+            if isinstance(result, pd.Series):
+                return ReadOnlySeriesProxy(result)
+            return result
+
+        return _wrapped
+
+
+def _unwrap_read_only_pandas_proxy(value: Any) -> Any:
+    if isinstance(value, ReadOnlyDataFrameProxy):
+        return value._source.copy(deep=True)
+    if isinstance(value, ReadOnlySeriesProxy):
+        return value._source.copy(deep=True)
+    return value
 
 
 class _StdoutCollector:

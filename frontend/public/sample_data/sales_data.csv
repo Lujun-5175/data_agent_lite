@@ -1,0 +1,801 @@
+order_id,order_date,region,product_category,product_name,quantity,unit_price,total_amount,customer_segment,channel
+ORD-10001,2025-03-12,South,Electronics,Wireless Mouse,5,31.6,154.35,Consumer,Offline
+ORD-10002,2025-02-02,South,Kitchen,Blender,6,74.89,463.45,Consumer,Online
+ORD-10003,2025-02-08,West,Electronics,USB-C Hub,4,65.55,271.5,Consumer,Online
+ORD-10004,2025-02-10,East,Fitness,Adjustable Dumbbells,4,200.35,831.92,Consumer,Offline
+ORD-10005,2025-11-14,North,Beauty,Hair Dryer,1,51.28,51.08,Consumer,Online
+ORD-10006,2025-12-26,North,Beauty,Makeup Kit,6,45.36,281.37,Corporate,Offline
+ORD-10007,2025-01-09,South,Electronics,Noise Cancelling Headphones,8,145.1,1128.92,Corporate,Offline
+ORD-10008,2025-12-26,West,Outdoor,Trail Backpack,6,93.64,541.96,Small Business,Online
+ORD-10009,2025-03-28,West,Fitness,Resistance Bands,5,26.88,139.19,Consumer,Offline
+ORD-10010,2025-07-31,West,Kitchen,Air Fryer,4,111.71,434.11,Corporate,Offline
+ORD-10011,2025-02-10,East,Home Office,Standing Desk,2,525.27,1043.46,Consumer,Offline
+ORD-10012,2025-08-29,East,Beauty,Skin Care Set,5,58.04,278.71,Consumer,Online
+ORD-10013,2025-06-03,North,Fitness,Resistance Bands,3,27.37,85.01,Small Business,Offline
+ORD-10014,2025-12-16,West,Beauty,Hair Dryer,6,49.84,301.15,Corporate,Offline
+ORD-10015,2025-03-02,North,Electronics,Wireless Mouse,4,31.86,123.63,Consumer,Online
+ORD-10016,2025-01-24,South,Home Office,Desk Lamp,2,41.62,86.34,Consumer,Online
+ORD-10017,2025-04-12,South,Electronics,USB-C Hub,4,66.56,265.68,Corporate,Online
+ORD-10018,2025-11-29,North,Beauty,Hair Dryer,5,46.83,234.81,Consumer,Online
+ORD-10019,2025-05-12,East,Beauty,Hair Dryer,3,65.84,200.95,Small Business,Online
+ORD-10020,2025-10-02,South,Kitchen,Coffee Maker,4,74.24,302.8,Consumer,Offline
+ORD-10021,2025-12-22,East,Fitness,Adjustable Dumbbells,2,193.95,376.59,Small Business,Offline
+ORD-10022,2025-09-09,North,Kitchen,Blender,4,59.24,240.77,Consumer,Offline
+ORD-10023,2025-01-06,North,Kitchen,Blender,5,82.2,417.15,Consumer,Offline
+ORD-10024,2025-06-20,North,Electronics,Noise Cancelling Headphones,5,163.81,802.45,Consumer,Offline
+ORD-10025,2025-11-28,South,Electronics,Wireless Mouse,3,21.11,64.72,Small Business,Online
+ORD-10026,2025-09-17,East,Outdoor,Water Bottle,7,19.96,137.6,Corporate,Offline
+ORD-10027,2025-10-20,South,Home Office,Ergonomic Chair,7,253.19,1734.15,Corporate,Offline
+ORD-10028,2025-01-25,East,Kitchen,Air Fryer,4,120.11,486.65,Consumer,Online
+ORD-10029,2025-06-15,North,Beauty,Hair Dryer,6,68.99,406.11,Corporate,Online
+ORD-10030,2025-09-26,West,Kitchen,Air Fryer,5,98.36,504.82,Consumer,Offline
+ORD-10031,2025-08-29,South,Kitchen,Blender,2,72.89,147.24,Consumer,Offline
+ORD-10032,2025-10-08,North,Fitness,Resistance Bands,4,16.04,65.43,Consumer,Online
+ORD-10033,2025-09-15,South,Kitchen,Blender,6,66.99,386.82,Corporate,Online
+ORD-10034,2025-08-23,West,Beauty,Skin Care Set,2,65.52,132.08,Consumer,Online
+ORD-10035,2025-10-15,North,Outdoor,Water Bottle,4,20.66,84.09,Corporate,Offline
+ORD-10036,2025-12-09,North,Kitchen,Blender,5,72.99,359.98,Consumer,Online
+ORD-10037,2025-09-24,West,Beauty,Makeup Kit,5,41.05,210.38,Corporate,Offline
+ORD-10038,2025-09-20,North,Electronics,Wireless Mouse,4,23.55,96.37,Corporate,Offline
+ORD-10039,2025-10-01,South,Kitchen,Blender,3,63.51,194.15,Small Business,Offline
+ORD-10040,2025-04-14,East,Electronics,Wireless Mouse,4,32.94,131.81,Corporate,Offline
+ORD-10041,2025-05-20,West,Fitness,Adjustable Dumbbells,5,252.83,1281.33,Consumer,Online
+ORD-10042,2025-05-04,South,Fitness,Yoga Mat,7,35.27,250.65,Corporate,Offline
+ORD-10043,2025-03-16,East,Home Office,Desk Lamp,3,49.74,149.48,Consumer,Offline
+ORD-10044,2025-04-28,West,Kitchen,Blender,2,102.49,200.77,Consumer,Offline
+ORD-10045,2025-05-01,East,Outdoor,Water Bottle,7,31.19,210.1,Corporate,Offline
+ORD-10046,2025-02-27,West,Fitness,Resistance Bands,5,22.17,110.21,Consumer,Online
+ORD-10047,2025-11-20,East,Electronics,Wireless Mouse,1,23.12,22.84,Consumer,Online
+ORD-10048,2025-11-04,West,Beauty,Skin Care Set,4,62.21,248.28,Corporate,Offline
+ORD-10049,2025-02-12,North,Beauty,Makeup Kit,6,52.16,314.6,Consumer,Offline
+ORD-10050,2025-10-13,North,Home Office,Desk Lamp,5,26.93,133.16,Consumer,Online
+ORD-10051,2025-12-15,East,Electronics,USB-C Hub,5,42.69,206.97,Corporate,Online
+ORD-10052,2025-12-03,East,Fitness,Yoga Mat,2,26.9,54.85,Consumer,Offline
+ORD-10053,2025-03-22,East,Home Office,Desk Lamp,4,42.84,170.26,Corporate,Online
+ORD-10054,2025-12-13,East,Outdoor,Camping Tent,1,186.15,188.41,Small Business,Offline
+ORD-10055,2025-09-28,East,Fitness,Resistance Bands,4,18.23,71.05,Corporate,Offline
+ORD-10056,2025-09-10,East,Fitness,Resistance Bands,2,17.57,34.48,Small Business,Offline
+ORD-10057,2025-01-10,South,Electronics,Wireless Mouse,8,26.27,204.61,Corporate,Online
+ORD-10058,2025-06-14,South,Home Office,Ergonomic Chair,3,281.09,854.4,Consumer,Online
+ORD-10059,2025-08-09,South,Outdoor,Camping Tent,6,184.67,1116.51,Consumer,Offline
+ORD-10060,2025-01-17,West,Home Office,Ergonomic Chair,4,297.41,1174.08,Corporate,Online
+ORD-10061,2025-08-08,South,Kitchen,Air Fryer,2,96.97,189.42,Consumer,Online
+ORD-10062,2025-12-21,West,Fitness,Resistance Bands,2,20.89,42.43,Consumer,Online
+ORD-10063,2025-09-21,North,Outdoor,Water Bottle,1,20.37,19.6,Small Business,Offline
+ORD-10064,2025-10-19,North,Outdoor,Water Bottle,6,21.65,128.05,Consumer,Offline
+ORD-10065,2025-01-04,North,Electronics,Wireless Mouse,3,26.03,80.83,Consumer,Online
+ORD-10066,2025-10-22,East,Fitness,Resistance Bands,6,16.26,96.89,Corporate,Offline
+ORD-10067,2025-05-30,North,Electronics,USB-C Hub,4,59.7,248.16,Consumer,Online
+ORD-10068,2025-06-28,South,Beauty,Makeup Kit,4,48.56,201.71,Consumer,Online
+ORD-10069,2025-05-16,South,Electronics,USB-C Hub,1,57.37,59.06,Small Business,Offline
+ORD-10070,2025-08-18,South,Home Office,Standing Desk,6,363.47,2175.66,Consumer,Offline
+ORD-10071,2025-12-09,West,Outdoor,Trail Backpack,2,87.11,169.76,Consumer,Offline
+ORD-10072,2025-09-11,West,Electronics,USB-C Hub,5,48.7,247.24,Corporate,Online
+ORD-10073,2025-09-16,West,Electronics,USB-C Hub,3,52.99,157.74,Small Business,Offline
+ORD-10074,2025-05-03,East,Electronics,Wireless Mouse,5,35.13,178.47,Consumer,Offline
+ORD-10075,2025-10-11,South,Electronics,Noise Cancelling Headphones,5,126.19,646.9,Consumer,Offline
+ORD-10076,2025-06-27,West,Fitness,Yoga Mat,4,32.8,128.28,Consumer,Online
+ORD-10077,2025-09-06,South,Fitness,Adjustable Dumbbells,6,155.17,903.82,Consumer,Offline
+ORD-10078,2025-01-04,West,Fitness,Adjustable Dumbbells,6,208.53,1235.4,Consumer,Offline
+ORD-10079,2025-03-07,West,Fitness,Adjustable Dumbbells,1,254.31,258.98,Consumer,Offline
+ORD-10080,2025-03-10,West,Electronics,USB-C Hub,2,72.71,148.74,Small Business,Offline
+ORD-10081,2025-09-02,South,Electronics,Wireless Mouse,4,20.74,80.58,Consumer,Online
+ORD-10082,2025-05-14,East,Electronics,Wireless Mouse,3,29.71,92.2,Consumer,Online
+ORD-10083,2025-10-25,North,Outdoor,Trail Backpack,5,70.69,351.65,Consumer,Online
+ORD-10084,2025-09-27,North,Kitchen,Blender,5,64.9,321.38,Corporate,Online
+ORD-10085,2025-02-09,North,Electronics,USB-C Hub,4,55.08,221.46,Corporate,Offline
+ORD-10086,2025-05-11,South,Electronics,Wireless Mouse,4,34.55,138.54,Small Business,Offline
+ORD-10087,2025-06-16,North,Kitchen,Blender,6,73.22,438.92,Small Business,Online
+ORD-10088,2025-01-21,West,Kitchen,Blender,4,82.66,341.21,Corporate,Online
+ORD-10089,2025-04-09,South,Home Office,Standing Desk,4,502.5,2041.83,Consumer,Offline
+ORD-10090,2025-10-20,East,Fitness,Yoga Mat,1,30.05,29.94,Consumer,Offline
+ORD-10091,2025-05-12,South,Outdoor,Trail Backpack,7,88.69,613.07,Corporate,Online
+ORD-10092,2025-01-21,North,Outdoor,Trail Backpack,1,77.62,78.75,Corporate,Offline
+ORD-10093,2025-03-14,South,Home Office,Ergonomic Chair,1,288.57,290.59,Consumer,Online
+ORD-10094,2025-02-08,South,Home Office,Desk Lamp,5,39.35,197.59,Corporate,Online
+ORD-10095,2025-04-06,South,Electronics,USB-C Hub,2,56.26,112.14,Small Business,Offline
+ORD-10096,2025-01-24,North,Electronics,Noise Cancelling Headphones,4,134.47,522.83,Corporate,Online
+ORD-10097,2025-01-08,North,Kitchen,Coffee Maker,6,96.95,560.4,Consumer,Online
+ORD-10098,2025-08-21,South,Home Office,Desk Lamp,4,37.52,148.03,Consumer,Online
+ORD-10099,2025-08-29,South,Kitchen,Air Fryer,8,106.79,887.15,Corporate,Online
+ORD-10100,2025-09-06,East,Electronics,Wireless Mouse,4,25.3,99.47,Consumer,Online
+ORD-10101,2025-10-31,North,Kitchen,Coffee Maker,3,79.14,239.83,Corporate,Offline
+ORD-10102,2025-04-07,West,Outdoor,Camping Tent,2,278.61,536.75,Consumer,Online
+ORD-10103,2025-03-31,East,Home Office,Ergonomic Chair,3,299.44,914.85,Consumer,Offline
+ORD-10104,2025-09-14,East,Outdoor,Trail Backpack,6,69.91,419.43,Corporate,Offline
+ORD-10105,2025-05-23,West,Electronics,Wireless Mouse,6,35.43,219.23,Consumer,Offline
+ORD-10106,2025-08-06,North,Fitness,Yoga Mat,6,26.8,159.69,Consumer,Offline
+ORD-10107,2025-12-20,West,Electronics,Wireless Mouse,1,24.3,25.0,Consumer,Offline
+ORD-10108,2025-09-25,South,Beauty,Skin Care Set,5,55.24,278.76,Small Business,Online
+ORD-10109,2025-05-21,East,Home Office,Standing Desk,4,520.78,2042.68,Consumer,Offline
+ORD-10110,2025-05-20,West,Beauty,Hair Dryer,6,65.52,390.09,Small Business,Offline
+ORD-10111,2025-02-17,East,Fitness,Yoga Mat,7,32.25,222.71,Corporate,Online
+ORD-10112,2025-10-11,South,Electronics,Noise Cancelling Headphones,7,130.13,909.74,Corporate,Offline
+ORD-10113,2025-07-15,East,Fitness,Yoga Mat,7,29.26,196.71,Corporate,Online
+ORD-10114,2025-09-18,East,Electronics,Noise Cancelling Headphones,4,129.03,535.95,Small Business,Offline
+ORD-10115,2025-07-03,East,Electronics,Wireless Mouse,5,30.95,155.39,Corporate,Online
+ORD-10116,2025-05-15,North,Home Office,Standing Desk,3,448.66,1319.46,Consumer,Offline
+ORD-10117,2025-07-20,South,Electronics,Wireless Mouse,4,26.48,107.7,Consumer,Offline
+ORD-10118,2025-08-29,North,Kitchen,Air Fryer,6,93.62,548.66,Small Business,Offline
+ORD-10119,2025-12-06,South,Beauty,Makeup Kit,6,44.74,268.61,Consumer,Offline
+ORD-10120,2025-08-06,North,Fitness,Adjustable Dumbbells,1,182.98,187.45,Small Business,Offline
+ORD-10121,2025-09-15,North,Outdoor,Water Bottle,7,17.88,120.92,Corporate,Offline
+ORD-10122,2025-08-28,West,Electronics,Noise Cancelling Headphones,4,138.61,556.43,Corporate,Online
+ORD-10123,2025-04-29,North,Beauty,Makeup Kit,5,61.81,309.37,Corporate,Offline
+ORD-10124,2025-02-27,South,Electronics,Wireless Mouse,1,28.76,29.85,Small Business,Offline
+ORD-10125,2025-02-16,North,Electronics,Noise Cancelling Headphones,5,157.71,803.24,Consumer,Online
+ORD-10126,2025-07-18,East,Outdoor,Trail Backpack,2,91.13,183.26,Consumer,Online
+ORD-10127,2025-10-10,South,Fitness,Adjustable Dumbbells,1,145.69,147.24,Consumer,Offline
+ORD-10128,2025-04-14,North,Kitchen,Air Fryer,3,143.92,439.78,Consumer,Online
+ORD-10129,2025-03-27,East,Electronics,USB-C Hub,5,62.19,300.09,Consumer,Online
+ORD-10130,2025-10-21,East,Kitchen,Blender,2,58.87,116.35,Consumer,Offline
+ORD-10131,2025-04-03,East,Electronics,USB-C Hub,4,52.77,210.77,Consumer,Online
+ORD-10132,2025-03-29,North,Fitness,Adjustable Dumbbells,5,207.57,1066.17,Small Business,Online
+ORD-10133,2025-09-17,South,Fitness,Yoga Mat,3,25.67,78.38,Corporate,Offline
+ORD-10134,2025-07-26,South,Fitness,Yoga Mat,3,31.53,97.32,Consumer,Online
+ORD-10135,2025-11-28,East,Electronics,USB-C Hub,5,45.96,227.16,Small Business,Offline
+ORD-10136,2025-01-23,North,Electronics,Wireless Mouse,3,27.62,85.44,Small Business,Offline
+ORD-10137,2025-12-08,South,Electronics,USB-C Hub,5,48.39,242.69,Small Business,Online
+ORD-10138,2025-04-10,South,Kitchen,Blender,5,74.42,372.85,Corporate,Online
+ORD-10139,2025-11-22,West,Outdoor,Camping Tent,5,204.87,1060.71,Small Business,Offline
+ORD-10140,2025-07-11,North,Beauty,Makeup Kit,5,48.2,242.25,Small Business,Online
+ORD-10141,2025-06-06,North,Kitchen,Air Fryer,2,122.92,255.63,Consumer,Offline
+ORD-10142,2025-11-13,West,Fitness,Adjustable Dumbbells,7,162.56,1126.65,Corporate,Online
+ORD-10143,2025-09-12,North,Fitness,Adjustable Dumbbells,5,167.73,852.34,Consumer,Offline
+ORD-10144,2025-01-04,West,Electronics,Wireless Mouse,3,28.57,85.15,Consumer,Online
+ORD-10145,2025-01-31,North,Fitness,Resistance Bands,3,20.46,60.39,Corporate,Online
+ORD-10146,2025-01-24,West,Kitchen,Coffee Maker,5,102.94,515.66,Consumer,Online
+ORD-10147,2025-08-11,West,Fitness,Resistance Bands,6,24.2,140.23,Corporate,Offline
+ORD-10148,2025-09-15,North,Home Office,Standing Desk,7,391.47,2683.17,Corporate,Online
+ORD-10149,2025-10-08,North,Beauty,Hair Dryer,3,53.79,160.18,Corporate,Offline
+ORD-10150,2025-04-01,North,Kitchen,Blender,6,91.56,546.79,Small Business,Offline
+ORD-10151,2025-07-01,West,Fitness,Yoga Mat,6,30.46,179.46,Consumer,Online
+ORD-10152,2025-02-13,West,Kitchen,Air Fryer,5,133.7,682.06,Corporate,Offline
+ORD-10153,2025-10-09,East,Home Office,Standing Desk,3,338.14,1015.05,Small Business,Online
+ORD-10154,2025-06-20,West,Electronics,Noise Cancelling Headphones,1,180.08,179.37,Consumer,Offline
+ORD-10155,2025-09-01,North,Beauty,Hair Dryer,4,45.22,176.63,Consumer,Online
+ORD-10156,2025-09-08,East,Electronics,Noise Cancelling Headphones,7,106.76,761.05,Corporate,Online
+ORD-10157,2025-10-19,South,Outdoor,Water Bottle,5,19.26,94.27,Consumer,Online
+ORD-10158,2025-10-17,West,Home Office,Desk Lamp,7,30.5,207.3,Corporate,Offline
+ORD-10159,2025-05-28,West,Beauty,Makeup Kit,2,58.42,120.05,Corporate,Offline
+ORD-10160,2025-04-09,South,Electronics,Noise Cancelling Headphones,3,151.77,452.73,Consumer,Online
+ORD-10161,2025-08-20,North,Outdoor,Camping Tent,5,192.9,959.0,Consumer,Online
+ORD-10162,2025-01-27,East,Beauty,Skin Care Set,2,65.39,130.66,Consumer,Online
+ORD-10163,2025-09-20,South,Home Office,Ergonomic Chair,4,268.52,1052.65,Corporate,Offline
+ORD-10164,2025-11-06,East,Home Office,Desk Lamp,6,32.87,195.62,Consumer,Online
+ORD-10165,2025-02-26,West,Electronics,Wireless Mouse,4,28.56,113.93,Consumer,Online
+ORD-10166,2025-02-21,East,Fitness,Adjustable Dumbbells,3,181.34,530.12,Consumer,Online
+ORD-10167,2025-07-30,South,Electronics,Noise Cancelling Headphones,4,132.47,512.78,Consumer,Online
+ORD-10168,2025-08-27,South,Outdoor,Camping Tent,1,183.05,177.93,Consumer,Online
+ORD-10169,2025-09-20,South,Outdoor,Trail Backpack,2,73.05,148.25,Small Business,Online
+ORD-10170,2025-10-11,North,Kitchen,Blender,3,56.48,165.1,Small Business,Online
+ORD-10171,2025-10-20,North,Electronics,Wireless Mouse,2,24.49,49.16,Consumer,Online
+ORD-10172,2025-03-29,East,Beauty,Skin Care Set,4,78.78,327.36,Corporate,Online
+ORD-10173,2025-11-25,North,Kitchen,Coffee Maker,10,70.93,697.85,Corporate,Offline
+ORD-10174,2025-03-19,South,Fitness,Resistance Bands,4,27.79,107.55,Corporate,Online
+ORD-10175,2025-12-28,East,Beauty,Skin Care Set,3,60.61,183.46,Consumer,Online
+ORD-10176,2025-07-26,West,Outdoor,Camping Tent,4,211.21,818.82,Small Business,Online
+ORD-10177,2025-09-15,North,Kitchen,Air Fryer,6,80.81,494.62,Consumer,Online
+ORD-10178,2025-03-06,East,Beauty,Makeup Kit,5,50.66,256.25,Consumer,Offline
+ORD-10179,2025-09-25,South,Outdoor,Water Bottle,1,18.31,17.86,Consumer,Offline
+ORD-10180,2025-09-23,South,Home Office,Standing Desk,5,348.91,1732.86,Small Business,Offline
+ORD-10181,2025-12-06,East,Home Office,Desk Lamp,2,32.73,67.84,Consumer,Online
+ORD-10182,2025-04-22,West,Outdoor,Water Bottle,6,25.7,151.84,Consumer,Online
+ORD-10183,2025-04-14,West,Fitness,Resistance Bands,4,28.98,111.41,Consumer,Offline
+ORD-10184,2025-06-30,East,Kitchen,Air Fryer,1,120.19,120.42,Consumer,Online
+ORD-10185,2025-09-14,East,Electronics,Wireless Mouse,10,24.84,241.55,Corporate,Online
+ORD-10186,2025-12-21,West,Electronics,Wireless Mouse,4,23.98,94.44,Corporate,Online
+ORD-10187,2025-09-21,North,Beauty,Skin Care Set,6,60.38,371.16,Consumer,Offline
+ORD-10188,2025-10-05,East,Electronics,Noise Cancelling Headphones,4,111.64,437.89,Corporate,Online
+ORD-10189,2025-09-21,North,Kitchen,Air Fryer,6,91.16,526.23,Consumer,Online
+ORD-10190,2025-05-03,West,Home Office,Desk Lamp,5,51.17,246.19,Consumer,Offline
+ORD-10191,2025-02-01,North,Kitchen,Blender,1,67.97,67.65,Consumer,Online
+ORD-10192,2025-04-05,South,Home Office,Standing Desk,3,480.87,1416.7,Consumer,Offline
+ORD-10193,2025-12-19,South,Beauty,Skin Care Set,2,53.56,106.54,Consumer,Offline
+ORD-10194,2025-06-30,North,Outdoor,Water Bottle,5,28.01,138.14,Consumer,Online
+ORD-10195,2025-07-30,East,Electronics,Wireless Mouse,5,30.18,154.91,Consumer,Online
+ORD-10196,2025-02-18,North,Kitchen,Coffee Maker,6,101.13,589.14,Consumer,Offline
+ORD-10197,2025-04-17,North,Home Office,Desk Lamp,2,42.58,84.55,Consumer,Online
+ORD-10198,2025-08-10,West,Kitchen,Coffee Maker,4,81.32,323.53,Corporate,Online
+ORD-10199,2025-06-18,South,Beauty,Makeup Kit,2,50.27,99.72,Consumer,Offline
+ORD-10200,2025-09-01,East,Home Office,Ergonomic Chair,4,203.08,807.09,Consumer,Online
+ORD-10201,2025-06-06,South,Outdoor,Camping Tent,10,238.06,2398.54,Corporate,Offline
+ORD-10202,2025-03-02,East,Home Office,Standing Desk,4,516.9,2146.02,Small Business,Online
+ORD-10203,2025-11-15,South,Fitness,Resistance Bands,2,18.78,38.95,Small Business,Offline
+ORD-10204,2025-11-07,South,Beauty,Hair Dryer,4,49.71,202.39,Corporate,Offline
+ORD-10205,2025-09-06,South,Fitness,Yoga Mat,2,24.92,50.88,Consumer,Online
+ORD-10206,2025-10-26,South,Home Office,Standing Desk,4,378.08,1553.77,Consumer,Offline
+ORD-10207,2025-02-07,South,Fitness,Yoga Mat,4,38.3,158.11,Consumer,Online
+ORD-10208,2025-04-09,South,Kitchen,Blender,6,85.06,497.47,Consumer,Online
+ORD-10209,2025-01-01,East,Beauty,Makeup Kit,1,46.62,45.54,Corporate,Offline
+ORD-10210,2025-03-29,North,Kitchen,Blender,4,75.69,304.9,Consumer,Online
+ORD-10211,2025-08-14,South,Kitchen,Coffee Maker,6,80.96,497.48,Consumer,Offline
+ORD-10212,2025-06-17,West,Beauty,Skin Care Set,6,73.42,431.4,Consumer,Online
+ORD-10213,2025-08-02,North,Kitchen,Blender,5,61.76,315.51,Consumer,Online
+ORD-10214,2025-08-14,East,Fitness,Adjustable Dumbbells,5,153.07,792.41,Corporate,Online
+ORD-10215,2025-04-15,West,Electronics,Wireless Mouse,3,33.76,101.41,Consumer,Online
+ORD-10216,2025-11-28,East,Kitchen,Air Fryer,3,87.96,266.59,Small Business,Offline
+ORD-10217,2025-12-26,West,Kitchen,Blender,4,69.92,280.69,Consumer,Online
+ORD-10218,2025-05-05,East,Fitness,Yoga Mat,4,32.55,127.36,Corporate,Offline
+ORD-10219,2025-02-25,South,Fitness,Adjustable Dumbbells,6,232.3,1411.99,Consumer,Offline
+ORD-10220,2025-05-02,North,Kitchen,Blender,6,76.11,468.49,Consumer,Online
+ORD-10221,2025-01-22,North,Kitchen,Coffee Maker,5,94.65,476.67,Small Business,Online
+ORD-10222,2025-03-02,North,Outdoor,Camping Tent,2,250.66,510.37,Consumer,Online
+ORD-10223,2025-03-02,East,Electronics,USB-C Hub,1,55.15,56.11,Consumer,Offline
+ORD-10224,2025-04-15,East,Kitchen,Blender,5,80.49,402.11,Consumer,Online
+ORD-10225,2025-12-14,South,Electronics,USB-C Hub,2,44.67,92.86,Small Business,Offline
+ORD-10226,2025-07-26,South,Kitchen,Blender,4,73.87,305.0,Corporate,Offline
+ORD-10227,2025-02-15,East,Kitchen,Blender,4,68.47,279.49,Consumer,Online
+ORD-10228,2025-02-20,East,Home Office,Ergonomic Chair,9,281.71,2567.48,Corporate,Online
+ORD-10229,2025-09-23,West,Electronics,USB-C Hub,4,50.2,204.11,Consumer,Online
+ORD-10230,2025-10-21,North,Beauty,Hair Dryer,3,52.96,156.83,Consumer,Online
+ORD-10231,2025-08-05,East,Electronics,Noise Cancelling Headphones,1,118.9,117.85,Consumer,Online
+ORD-10232,2025-06-15,North,Fitness,Resistance Bands,1,20.54,20.33,Consumer,Online
+ORD-10233,2025-11-06,East,Outdoor,Trail Backpack,4,71.25,292.17,Consumer,Offline
+ORD-10234,2025-05-27,South,Electronics,Wireless Mouse,7,36.83,267.73,Corporate,Offline
+ORD-10235,2025-06-29,North,Fitness,Resistance Bands,1,22.97,22.06,Consumer,Offline
+ORD-10236,2025-12-24,West,Fitness,Resistance Bands,2,19.15,38.03,Consumer,Offline
+ORD-10237,2025-06-19,West,Kitchen,Coffee Maker,3,99.47,289.03,Small Business,Online
+ORD-10238,2025-12-04,West,Beauty,Makeup Kit,4,43.05,166.4,Consumer,Online
+ORD-10239,2025-05-11,West,Electronics,Wireless Mouse,2,30.95,60.03,Consumer,Offline
+ORD-10240,2025-10-18,West,Home Office,Desk Lamp,7,33.24,234.39,Corporate,Offline
+ORD-10241,2025-09-20,South,Kitchen,Coffee Maker,2,84.67,166.94,Small Business,Offline
+ORD-10242,2025-09-09,West,Fitness,Resistance Bands,2,18.34,35.56,Small Business,Offline
+ORD-10243,2025-09-08,North,Home Office,Desk Lamp,3,35.67,108.4,Consumer,Online
+ORD-10244,2025-08-06,East,Electronics,Wireless Mouse,5,27.32,135.17,Consumer,Online
+ORD-10245,2025-12-30,West,Beauty,Makeup Kit,3,41.08,118.78,Consumer,Online
+ORD-10246,2025-08-03,West,Electronics,Wireless Mouse,4,30.15,118.72,Corporate,Offline
+ORD-10247,2025-01-10,South,Beauty,Hair Dryer,3,58.92,183.52,Small Business,Offline
+ORD-10248,2025-08-17,East,Home Office,Desk Lamp,4,38.04,156.48,Consumer,Online
+ORD-10249,2025-11-08,South,Electronics,Wireless Mouse,1,26.27,25.25,Consumer,Offline
+ORD-10250,2025-08-08,North,Electronics,Wireless Mouse,5,25.29,122.58,Corporate,Online
+ORD-10251,2025-12-28,South,Home Office,Standing Desk,2,382.98,782.83,Consumer,Online
+ORD-10252,2025-05-05,West,Electronics,Wireless Mouse,2,31.42,60.68,Consumer,Online
+ORD-10253,2025-06-19,South,Outdoor,Trail Backpack,5,93.5,454.59,Consumer,Online
+ORD-10254,2025-08-23,East,Kitchen,Air Fryer,3,107.57,324.54,Consumer,Offline
+ORD-10255,2025-06-03,North,Beauty,Makeup Kit,2,50.4,101.91,Consumer,Online
+ORD-10256,2025-11-02,North,Fitness,Adjustable Dumbbells,8,155.17,1200.57,Corporate,Offline
+ORD-10257,2025-12-05,North,Beauty,Skin Care Set,2,57.94,112.64,Consumer,Offline
+ORD-10258,2025-09-19,East,Fitness,Adjustable Dumbbells,5,178.76,899.66,Consumer,Online
+ORD-10259,2025-10-16,South,Outdoor,Camping Tent,9,182.56,1593.42,Corporate,Online
+ORD-10260,2025-12-23,North,Outdoor,Water Bottle,5,18.93,94.3,Small Business,Online
+ORD-10261,2025-06-23,North,Kitchen,Coffee Maker,3,100.47,294.31,Corporate,Online
+ORD-10262,2025-02-02,South,Electronics,Wireless Mouse,2,29.42,59.36,Corporate,Offline
+ORD-10263,2025-03-29,North,Beauty,Skin Care Set,2,78.13,156.25,Small Business,Offline
+ORD-10264,2025-09-10,West,Home Office,Desk Lamp,2,36.84,70.77,Consumer,Offline
+ORD-10265,2025-05-29,North,Kitchen,Air Fryer,6,124.83,721.1,Corporate,Online
+ORD-10266,2025-11-21,East,Electronics,Noise Cancelling Headphones,6,130.07,773.02,Corporate,Online
+ORD-10267,2025-04-21,South,Electronics,Wireless Mouse,3,31.14,96.16,Corporate,Online
+ORD-10268,2025-06-03,North,Outdoor,Trail Backpack,7,100.71,720.48,Corporate,Online
+ORD-10269,2025-07-17,South,Beauty,Hair Dryer,2,59.42,117.23,Corporate,Online
+ORD-10270,2025-08-28,South,Kitchen,Air Fryer,4,89.88,371.44,Corporate,Online
+ORD-10271,2025-09-01,East,Outdoor,Camping Tent,6,193.19,1140.91,Consumer,Online
+ORD-10272,2025-03-02,South,Fitness,Resistance Bands,9,25.0,220.94,Corporate,Online
+ORD-10273,2025-02-14,North,Fitness,Adjustable Dumbbells,3,223.38,657.77,Consumer,Online
+ORD-10274,2025-01-04,South,Beauty,Skin Care Set,5,69.82,348.12,Small Business,Online
+ORD-10275,2025-08-31,East,Outdoor,Water Bottle,5,20.96,104.11,Corporate,Online
+ORD-10276,2025-01-20,North,Home Office,Standing Desk,4,364.06,1499.08,Consumer,Online
+ORD-10277,2025-12-03,South,Fitness,Adjustable Dumbbells,5,157.79,788.39,Consumer,Online
+ORD-10278,2025-11-26,West,Electronics,Noise Cancelling Headphones,2,137.29,283.51,Consumer,Online
+ORD-10279,2025-10-01,North,Electronics,Wireless Mouse,7,19.86,144.22,Corporate,Online
+ORD-10280,2025-01-15,North,Kitchen,Air Fryer,5,124.59,598.24,Consumer,Offline
+ORD-10281,2025-12-23,East,Electronics,USB-C Hub,3,50.8,150.82,Consumer,Offline
+ORD-10282,2025-04-29,South,Fitness,Adjustable Dumbbells,4,234.6,928.17,Small Business,Online
+ORD-10283,2025-02-20,West,Electronics,Wireless Mouse,1,30.33,31.03,Consumer,Online
+ORD-10284,2025-07-10,West,Home Office,Desk Lamp,3,42.03,125.46,Consumer,Online
+ORD-10285,2025-10-08,North,Home Office,Ergonomic Chair,2,245.67,473.81,Consumer,Online
+ORD-10286,2025-03-01,East,Fitness,Yoga Mat,5,33.78,171.23,Consumer,Online
+ORD-10287,2025-05-02,East,Kitchen,Blender,2,84.18,171.29,Consumer,Offline
+ORD-10288,2025-03-21,South,Home Office,Ergonomic Chair,1,285.86,281.39,Consumer,Online
+ORD-10289,2025-05-21,West,Outdoor,Water Bottle,4,28.7,114.71,Consumer,Online
+ORD-10290,2025-07-20,North,Electronics,Noise Cancelling Headphones,4,128.97,505.95,Consumer,Offline
+ORD-10291,2025-06-12,North,Home Office,Ergonomic Chair,2,340.73,655.5,Small Business,Offline
+ORD-10292,2025-06-12,North,Fitness,Adjustable Dumbbells,1,228.05,225.41,Consumer,Online
+ORD-10293,2025-02-03,East,Electronics,USB-C Hub,1,55.97,53.74,Consumer,Online
+ORD-10294,2025-07-28,North,Home Office,Ergonomic Chair,2,277.3,534.64,Consumer,Offline
+ORD-10295,2025-06-18,East,Electronics,Noise Cancelling Headphones,2,150.83,309.85,Consumer,Online
+ORD-10296,2025-04-29,South,Kitchen,Coffee Maker,4,113.17,446.69,Corporate,Online
+ORD-10297,2025-08-29,West,Electronics,Wireless Mouse,6,25.96,149.71,Consumer,Offline
+ORD-10298,2025-12-20,North,Fitness,Resistance Bands,5,21.31,106.01,Corporate,Offline
+ORD-10299,2025-09-28,South,Fitness,Yoga Mat,6,26.7,162.93,Small Business,Offline
+ORD-10300,2025-01-18,South,Kitchen,Blender,2,62.15,122.65,Small Business,Online
+ORD-10301,2025-07-04,North,Beauty,Makeup Kit,3,50.52,152.66,Small Business,Online
+ORD-10302,2025-07-06,North,Kitchen,Coffee Maker,5,91.65,464.42,Corporate,Online
+ORD-10303,2025-11-02,South,Beauty,Hair Dryer,1,46.62,46.24,Consumer,Offline
+ORD-10304,2025-08-27,North,Beauty,Skin Care Set,3,61.87,185.74,Small Business,Online
+ORD-10305,2025-05-12,East,Electronics,Noise Cancelling Headphones,4,171.49,684.43,Small Business,Offline
+ORD-10306,2025-02-27,East,Electronics,Noise Cancelling Headphones,3,169.16,509.0,Corporate,Online
+ORD-10307,2025-04-13,North,Fitness,Yoga Mat,4,38.23,155.94,Consumer,Online
+ORD-10308,2025-12-05,South,Kitchen,Coffee Maker,2,92.1,189.7,Small Business,Offline
+ORD-10309,2025-04-03,West,Beauty,Skin Care Set,1,76.5,77.42,Small Business,Offline
+ORD-10310,2025-10-09,South,Fitness,Yoga Mat,3,24.78,71.74,Corporate,Offline
+ORD-10311,2025-04-13,South,Fitness,Yoga Mat,4,38.9,155.66,Consumer,Online
+ORD-10312,2025-02-13,East,Outdoor,Trail Backpack,3,103.59,317.14,Consumer,Online
+ORD-10313,2025-02-06,North,Electronics,Noise Cancelling Headphones,3,162.92,506.17,Corporate,Online
+ORD-10314,2025-09-06,West,Kitchen,Coffee Maker,1,91.26,88.63,Small Business,Online
+ORD-10315,2025-11-04,North,Beauty,Hair Dryer,5,49.3,242.61,Consumer,Offline
+ORD-10316,2025-05-07,North,Beauty,Makeup Kit,3,51.52,150.67,Consumer,Offline
+ORD-10317,2025-06-04,North,Home Office,Standing Desk,4,503.43,1956.22,Small Business,Offline
+ORD-10318,2025-08-07,West,Fitness,Yoga Mat,3,32.97,101.25,Small Business,Offline
+ORD-10319,2025-07-02,East,Outdoor,Trail Backpack,6,78.35,477.65,Consumer,Online
+ORD-10320,2025-09-07,South,Beauty,Makeup Kit,6,38.26,229.38,Corporate,Online
+ORD-10321,2025-08-06,North,Electronics,Noise Cancelling Headphones,2,135.51,270.81,Consumer,Online
+ORD-10322,2025-10-30,South,Outdoor,Water Bottle,2,18.09,35.64,Small Business,Offline
+ORD-10323,2025-06-11,East,Electronics,Wireless Mouse,1,33.42,34.64,Consumer,Online
+ORD-10324,2025-08-11,North,Fitness,Resistance Bands,5,18.29,94.55,Consumer,Offline
+ORD-10325,2025-03-31,North,Kitchen,Coffee Maker,2,118.83,241.51,Small Business,Online
+ORD-10326,2025-03-25,North,Outdoor,Trail Backpack,6,111.88,660.53,Consumer,Online
+ORD-10327,2025-11-29,East,Electronics,USB-C Hub,4,45.86,187.63,Corporate,Offline
+ORD-10328,2025-05-23,South,Kitchen,Blender,3,71.97,209.12,Consumer,Online
+ORD-10329,2025-12-10,West,Home Office,Standing Desk,8,426.11,3503.43,Corporate,Offline
+ORD-10330,2025-12-18,West,Home Office,Standing Desk,9,408.91,3597.64,Corporate,Online
+ORD-10331,2025-11-10,North,Electronics,USB-C Hub,7,43.72,314.99,Corporate,Online
+ORD-10332,2025-11-13,West,Kitchen,Blender,1,70.45,70.19,Consumer,Online
+ORD-10333,2025-05-20,East,Electronics,Wireless Mouse,1,27.69,28.32,Consumer,Online
+ORD-10334,2025-08-06,South,Electronics,USB-C Hub,3,45.08,135.14,Small Business,Offline
+ORD-10335,2025-05-25,North,Fitness,Yoga Mat,3,35.91,104.12,Corporate,Offline
+ORD-10336,2025-06-15,East,Fitness,Resistance Bands,2,23.11,44.91,Consumer,Online
+ORD-10337,2025-03-23,North,Outdoor,Trail Backpack,2,104.86,204.35,Consumer,Online
+ORD-10338,2025-12-11,East,Outdoor,Camping Tent,2,172.25,348.3,Consumer,Online
+ORD-10339,2025-03-20,South,Electronics,Wireless Mouse,10,34.19,355.13,Corporate,Offline
+ORD-10340,2025-01-20,South,Beauty,Makeup Kit,5,49.3,243.53,Consumer,Online
+ORD-10341,2025-03-18,South,Beauty,Hair Dryer,5,67.84,344.84,Consumer,Offline
+ORD-10342,2025-11-02,West,Kitchen,Coffee Maker,3,89.45,277.07,Consumer,Offline
+ORD-10343,2025-03-29,West,Electronics,Wireless Mouse,5,32.16,162.03,Consumer,Online
+ORD-10344,2025-05-08,East,Home Office,Standing Desk,1,478.42,477.26,Consumer,Online
+ORD-10345,2025-04-26,South,Electronics,USB-C Hub,5,67.12,323.24,Corporate,Offline
+ORD-10346,2025-04-06,East,Beauty,Makeup Kit,4,59.69,242.94,Corporate,Online
+ORD-10347,2025-03-13,East,Electronics,USB-C Hub,2,58.38,118.69,Consumer,Offline
+ORD-10348,2025-01-11,West,Electronics,USB-C Hub,3,56.03,165.59,Consumer,Online
+ORD-10349,2025-02-17,East,Home Office,Ergonomic Chair,5,319.81,1651.67,Consumer,Online
+ORD-10350,2025-09-30,West,Electronics,Wireless Mouse,6,21.47,124.29,Consumer,Online
+ORD-10351,2025-07-22,South,Home Office,Desk Lamp,5,40.15,203.48,Consumer,Online
+ORD-10352,2025-02-06,North,Beauty,Hair Dryer,4,63.1,249.16,Consumer,Online
+ORD-10353,2025-12-20,East,Kitchen,Air Fryer,4,94.94,365.64,Consumer,Online
+ORD-10354,2025-09-13,North,Kitchen,Air Fryer,6,101.99,615.54,Consumer,Online
+ORD-10355,2025-08-31,East,Beauty,Hair Dryer,5,55.13,265.34,Consumer,Online
+ORD-10356,2025-12-21,West,Fitness,Resistance Bands,3,19.74,58.89,Small Business,Online
+ORD-10357,2025-01-30,West,Home Office,Desk Lamp,5,37.14,186.43,Corporate,Offline
+ORD-10358,2025-11-10,East,Fitness,Resistance Bands,5,19.48,98.77,Consumer,Offline
+ORD-10359,2025-07-30,North,Beauty,Skin Care Set,5,60.67,311.68,Consumer,Offline
+ORD-10360,2025-10-04,East,Electronics,USB-C Hub,2,42.36,82.09,Consumer,Offline
+ORD-10361,2025-07-20,South,Fitness,Resistance Bands,6,22.65,137.33,Consumer,Offline
+ORD-10362,2025-02-23,West,Electronics,USB-C Hub,2,58.28,112.44,Corporate,Online
+ORD-10363,2025-10-07,North,Kitchen,Air Fryer,8,90.21,711.87,Corporate,Offline
+ORD-10364,2025-10-01,East,Kitchen,Blender,5,52.21,258.44,Consumer,Online
+ORD-10365,2025-08-08,East,Fitness,Resistance Bands,2,22.9,44.25,Consumer,Offline
+ORD-10366,2025-03-17,South,Fitness,Adjustable Dumbbells,6,234.05,1367.26,Small Business,Online
+ORD-10367,2025-12-15,North,Kitchen,Air Fryer,6,92.8,537.82,Small Business,Offline
+ORD-10368,2025-06-07,West,Electronics,USB-C Hub,5,67.69,325.22,Consumer,Offline
+ORD-10369,2025-08-11,South,Fitness,Resistance Bands,6,22.17,129.77,Consumer,Online
+ORD-10370,2025-09-15,North,Electronics,Noise Cancelling Headphones,6,117.66,682.77,Consumer,Offline
+ORD-10371,2025-06-17,North,Beauty,Skin Care Set,3,60.68,177.07,Small Business,Online
+ORD-10372,2025-09-01,West,Beauty,Hair Dryer,6,49.78,307.79,Corporate,Offline
+ORD-10373,2025-09-08,North,Electronics,Noise Cancelling Headphones,4,110.2,428.51,Corporate,Offline
+ORD-10374,2025-04-21,East,Kitchen,Coffee Maker,2,108.21,224.33,Small Business,Online
+ORD-10375,2025-11-28,North,Beauty,Makeup Kit,4,33.96,136.19,Small Business,Online
+ORD-10376,2025-09-01,West,Outdoor,Water Bottle,3,23.37,70.06,Small Business,Online
+ORD-10377,2025-06-17,South,Kitchen,Blender,8,78.01,640.2,Corporate,Offline
+ORD-10378,2025-09-15,South,Beauty,Makeup Kit,1,37.52,36.37,Consumer,Offline
+ORD-10379,2025-10-03,South,Electronics,Wireless Mouse,4,21.65,88.05,Consumer,Offline
+ORD-10380,2025-06-04,North,Electronics,USB-C Hub,3,62.62,181.83,Corporate,Online
+ORD-10381,2025-12-26,South,Outdoor,Water Bottle,5,21.06,108.47,Consumer,Offline
+ORD-10382,2025-12-13,North,Kitchen,Blender,1,62.46,60.67,Consumer,Online
+ORD-10383,2025-10-05,South,Home Office,Ergonomic Chair,2,197.18,398.46,Consumer,Online
+ORD-10384,2025-08-28,East,Electronics,Noise Cancelling Headphones,3,123.26,363.62,Corporate,Offline
+ORD-10385,2025-01-01,West,Fitness,Adjustable Dumbbells,5,175.32,899.3,Consumer,Online
+ORD-10386,2025-05-05,East,Electronics,Wireless Mouse,10,36.87,354.41,Corporate,Offline
+ORD-10387,2025-02-08,North,Electronics,Wireless Mouse,1,31.9,32.03,Small Business,Offline
+ORD-10388,2025-10-23,West,Electronics,Noise Cancelling Headphones,2,128.97,267.24,Small Business,Online
+ORD-10389,2025-12-02,East,Home Office,Ergonomic Chair,2,278.59,553.6,Consumer,Offline
+ORD-10390,2025-10-17,South,Outdoor,Water Bottle,5,21.67,111.43,Corporate,Online
+ORD-10391,2025-05-31,North,Fitness,Yoga Mat,6,38.46,230.38,Small Business,Offline
+ORD-10392,2025-03-07,West,Outdoor,Camping Tent,6,240.24,1456.03,Consumer,Offline
+ORD-10393,2025-03-27,North,Home Office,Ergonomic Chair,6,327.72,2017.81,Consumer,Offline
+ORD-10394,2025-12-10,North,Fitness,Resistance Bands,7,19.75,133.37,Corporate,Offline
+ORD-10395,2025-10-19,West,Fitness,Resistance Bands,4,18.07,74.67,Small Business,Online
+ORD-10396,2025-08-21,South,Beauty,Skin Care Set,1,59.38,57.73,Consumer,Online
+ORD-10397,2025-05-09,South,Home Office,Ergonomic Chair,6,346.27,2049.36,Consumer,Online
+ORD-10398,2025-10-24,West,Outdoor,Trail Backpack,2,65.72,129.91,Small Business,Online
+ORD-10399,2025-10-18,South,Electronics,USB-C Hub,5,46.65,226.8,Consumer,Online
+ORD-10400,2025-12-03,South,Beauty,Makeup Kit,6,39.32,232.1,Consumer,Online
+ORD-10401,2025-07-30,East,Electronics,Noise Cancelling Headphones,4,150.65,602.05,Consumer,Online
+ORD-10402,2025-07-12,North,Kitchen,Blender,3,77.11,224.17,Small Business,Offline
+ORD-10403,2025-01-04,West,Fitness,Yoga Mat,6,34.24,199.32,Corporate,Offline
+ORD-10404,2025-02-24,North,Kitchen,Blender,6,75.18,442.51,Consumer,Online
+ORD-10405,2025-06-29,East,Electronics,Wireless Mouse,2,34.42,69.26,Consumer,Offline
+ORD-10406,2025-07-13,East,Beauty,Makeup Kit,3,45.09,136.97,Consumer,Offline
+ORD-10407,2025-01-30,North,Electronics,Wireless Mouse,7,29.79,202.74,Corporate,Online
+ORD-10408,2025-09-07,East,Outdoor,Camping Tent,9,192.5,1695.63,Corporate,Online
+ORD-10409,2025-07-14,West,Kitchen,Blender,6,73.15,429.57,Consumer,Offline
+ORD-10410,2025-01-04,West,Fitness,Yoga Mat,5,37.76,181.32,Small Business,Online
+ORD-10411,2025-02-23,East,Home Office,Ergonomic Chair,1,287.7,293.38,Consumer,Offline
+ORD-10412,2025-10-23,West,Fitness,Resistance Bands,1,20.33,19.69,Consumer,Online
+ORD-10413,2025-11-03,South,Fitness,Adjustable Dumbbells,4,163.43,648.61,Small Business,Offline
+ORD-10414,2025-11-17,North,Beauty,Hair Dryer,3,54.33,168.61,Small Business,Online
+ORD-10415,2025-10-27,East,Outdoor,Trail Backpack,7,65.15,467.6,Corporate,Online
+ORD-10416,2025-10-03,South,Kitchen,Blender,3,53.8,156.82,Small Business,Online
+ORD-10417,2025-10-11,East,Kitchen,Blender,3,59.32,181.86,Consumer,Offline
+ORD-10418,2025-07-13,North,Beauty,Skin Care Set,5,54.81,278.79,Consumer,Online
+ORD-10419,2025-01-18,West,Kitchen,Coffee Maker,2,99.06,194.12,Consumer,Online
+ORD-10420,2025-01-27,East,Electronics,Noise Cancelling Headphones,6,156.83,955.98,Consumer,Online
+ORD-10421,2025-01-25,South,Outdoor,Trail Backpack,2,88.36,183.71,Consumer,Offline
+ORD-10422,2025-01-30,West,Kitchen,Coffee Maker,5,105.93,544.37,Consumer,Offline
+ORD-10423,2025-08-13,North,Beauty,Makeup Kit,1,40.25,39.04,Consumer,Offline
+ORD-10424,2025-10-12,North,Electronics,Wireless Mouse,3,24.06,70.49,Corporate,Offline
+ORD-10425,2025-11-23,North,Kitchen,Blender,5,59.62,292.61,Consumer,Offline
+ORD-10426,2025-12-23,South,Beauty,Makeup Kit,7,38.13,261.99,Corporate,Offline
+ORD-10427,2025-07-18,North,Fitness,Resistance Bands,2,20.37,39.84,Consumer,Offline
+ORD-10428,2025-09-06,North,Beauty,Makeup Kit,8,40.69,331.76,Corporate,Offline
+ORD-10429,2025-04-15,South,Home Office,Ergonomic Chair,4,339.26,1326.81,Corporate,Offline
+ORD-10430,2025-08-07,East,Electronics,Noise Cancelling Headphones,1,119.93,120.17,Small Business,Online
+ORD-10431,2025-03-31,North,Home Office,Standing Desk,4,460.96,1879.89,Consumer,Offline
+ORD-10432,2025-10-21,South,Fitness,Adjustable Dumbbells,2,166.97,344.84,Consumer,Online
+ORD-10433,2025-07-07,North,Outdoor,Water Bottle,6,26.43,157.26,Consumer,Online
+ORD-10434,2025-03-09,West,Beauty,Makeup Kit,4,51.8,206.9,Consumer,Offline
+ORD-10435,2025-02-25,South,Fitness,Adjustable Dumbbells,2,185.96,359.52,Consumer,Online
+ORD-10436,2025-03-19,West,Kitchen,Coffee Maker,3,99.55,288.57,Small Business,Online
+ORD-10437,2025-05-08,East,Kitchen,Air Fryer,3,115.45,343.1,Corporate,Online
+ORD-10438,2025-05-11,North,Outdoor,Trail Backpack,3,109.93,322.61,Small Business,Offline
+ORD-10439,2025-11-08,South,Beauty,Skin Care Set,3,49.9,143.95,Corporate,Online
+ORD-10440,2025-11-30,East,Fitness,Resistance Bands,3,18.71,56.0,Consumer,Online
+ORD-10441,2025-05-11,South,Home Office,Desk Lamp,6,41.15,241.42,Small Business,Online
+ORD-10442,2025-08-02,West,Outdoor,Trail Backpack,10,86.81,843.24,Corporate,Offline
+ORD-10443,2025-01-27,North,Kitchen,Air Fryer,5,94.66,461.97,Consumer,Online
+ORD-10444,2025-05-16,South,Outdoor,Camping Tent,6,211.23,1269.37,Consumer,Online
+ORD-10445,2025-01-07,East,Electronics,Wireless Mouse,5,25.65,123.68,Small Business,Online
+ORD-10446,2025-02-07,East,Fitness,Adjustable Dumbbells,3,197.94,592.6,Consumer,Online
+ORD-10447,2025-01-23,West,Outdoor,Water Bottle,6,22.0,130.84,Corporate,Online
+ORD-10448,2025-11-15,South,Electronics,USB-C Hub,3,39.25,115.44,Consumer,Online
+ORD-10449,2025-11-06,East,Fitness,Adjustable Dumbbells,5,173.82,883.96,Consumer,Online
+ORD-10450,2025-09-04,South,Beauty,Hair Dryer,7,50.45,365.43,Corporate,Online
+ORD-10451,2025-10-30,West,Outdoor,Trail Backpack,2,68.74,133.31,Consumer,Online
+ORD-10452,2025-01-06,North,Outdoor,Camping Tent,1,192.61,193.86,Small Business,Offline
+ORD-10453,2025-01-10,West,Home Office,Desk Lamp,1,35.45,35.2,Consumer,Online
+ORD-10454,2025-02-26,East,Outdoor,Camping Tent,1,259.85,260.54,Small Business,Offline
+ORD-10455,2025-03-22,East,Kitchen,Air Fryer,10,113.69,1111.14,Corporate,Online
+ORD-10456,2025-11-22,North,Electronics,Wireless Mouse,10,26.77,267.28,Corporate,Offline
+ORD-10457,2025-12-14,West,Electronics,USB-C Hub,2,53.43,107.66,Small Business,Online
+ORD-10458,2025-06-11,East,Beauty,Skin Care Set,1,71.01,69.92,Consumer,Online
+ORD-10459,2025-05-03,East,Electronics,USB-C Hub,3,56.4,170.65,Small Business,Offline
+ORD-10460,2025-08-24,North,Electronics,USB-C Hub,4,44.71,172.76,Consumer,Offline
+ORD-10461,2025-03-18,West,Electronics,USB-C Hub,2,55.54,110.56,Consumer,Online
+ORD-10462,2025-01-05,South,Outdoor,Camping Tent,3,216.68,646.63,Consumer,Offline
+ORD-10463,2025-02-09,East,Beauty,Skin Care Set,4,76.84,312.13,Consumer,Online
+ORD-10464,2025-11-05,North,Fitness,Resistance Bands,1,17.44,17.82,Small Business,Offline
+ORD-10465,2025-02-25,South,Fitness,Adjustable Dumbbells,1,210.85,203.56,Small Business,Online
+ORD-10466,2025-10-14,West,Kitchen,Blender,5,62.72,316.05,Corporate,Online
+ORD-10467,2025-09-10,West,Home Office,Standing Desk,9,384.22,3323.74,Corporate,Offline
+ORD-10468,2025-07-27,North,Outdoor,Trail Backpack,6,81.54,502.27,Corporate,Offline
+ORD-10469,2025-02-11,West,Beauty,Skin Care Set,4,70.03,272.17,Consumer,Online
+ORD-10470,2025-07-02,North,Home Office,Standing Desk,2,405.45,832.19,Small Business,Online
+ORD-10471,2025-02-09,East,Home Office,Ergonomic Chair,2,331.26,644.7,Small Business,Online
+ORD-10472,2025-11-10,North,Fitness,Resistance Bands,2,19.1,39.54,Consumer,Online
+ORD-10473,2025-05-30,South,Fitness,Yoga Mat,4,38.93,159.96,Corporate,Offline
+ORD-10474,2025-07-12,East,Fitness,Adjustable Dumbbells,6,201.75,1172.71,Consumer,Offline
+ORD-10475,2025-09-18,East,Outdoor,Camping Tent,3,166.27,499.1,Consumer,Online
+ORD-10476,2025-02-13,East,Beauty,Skin Care Set,6,67.39,394.79,Corporate,Offline
+ORD-10477,2025-05-05,East,Kitchen,Air Fryer,1,141.42,141.12,Consumer,Offline
+ORD-10478,2025-08-29,South,Outdoor,Camping Tent,1,207.35,205.33,Consumer,Online
+ORD-10479,2025-10-28,West,Kitchen,Blender,4,66.58,264.47,Small Business,Offline
+ORD-10480,2025-07-31,North,Home Office,Ergonomic Chair,6,303.96,1797.68,Corporate,Online
+ORD-10481,2025-10-17,East,Electronics,Wireless Mouse,4,19.64,76.01,Consumer,Online
+ORD-10482,2025-07-12,North,Beauty,Hair Dryer,5,63.89,311.93,Small Business,Online
+ORD-10483,2025-04-01,South,Home Office,Desk Lamp,2,45.88,90.73,Corporate,Offline
+ORD-10484,2025-01-31,East,Beauty,Skin Care Set,6,67.1,408.73,Consumer,Offline
+ORD-10485,2025-11-16,North,Home Office,Standing Desk,8,320.23,2572.42,Corporate,Online
+ORD-10486,2025-01-22,West,Beauty,Makeup Kit,1,48.36,48.66,Consumer,Online
+ORD-10487,2025-06-25,South,Outdoor,Trail Backpack,2,84.68,169.41,Consumer,Offline
+ORD-10488,2025-12-23,West,Beauty,Makeup Kit,1,40.48,39.19,Consumer,Offline
+ORD-10489,2025-10-02,North,Outdoor,Trail Backpack,4,68.08,273.57,Corporate,Offline
+ORD-10490,2025-04-09,West,Home Office,Standing Desk,3,542.66,1652.49,Corporate,Online
+ORD-10491,2025-07-25,North,Fitness,Adjustable Dumbbells,3,190.53,551.56,Small Business,Online
+ORD-10492,2025-02-23,South,Electronics,USB-C Hub,6,51.41,310.17,Consumer,Offline
+ORD-10493,2025-08-10,North,Beauty,Hair Dryer,1,58.12,56.7,Consumer,Online
+ORD-10494,2025-10-26,East,Fitness,Yoga Mat,3,25.14,73.35,Consumer,Offline
+ORD-10495,2025-03-19,West,Outdoor,Camping Tent,1,278.72,279.26,Consumer,Offline
+ORD-10496,2025-10-31,East,Electronics,USB-C Hub,3,41.0,123.92,Consumer,Offline
+ORD-10497,2025-02-27,North,Kitchen,Blender,3,86.18,268.35,Consumer,Offline
+ORD-10498,2025-01-29,South,Electronics,USB-C Hub,1,48.06,48.99,Small Business,Offline
+ORD-10499,2025-12-01,East,Outdoor,Camping Tent,1,174.01,176.51,Consumer,Online
+ORD-10500,2025-07-02,South,Electronics,Wireless Mouse,8,28.91,227.37,Corporate,Online
+ORD-10501,2025-12-21,South,Kitchen,Blender,5,66.5,331.69,Consumer,Offline
+ORD-10502,2025-01-17,South,Fitness,Resistance Bands,2,23.64,48.92,Consumer,Offline
+ORD-10503,2025-04-19,West,Home Office,Standing Desk,2,475.82,951.66,Small Business,Online
+ORD-10504,2025-01-17,West,Fitness,Adjustable Dumbbells,1,178.16,177.54,Consumer,Offline
+ORD-10505,2025-03-03,North,Kitchen,Coffee Maker,4,123.23,480.78,Consumer,Offline
+ORD-10506,2025-03-20,North,Fitness,Yoga Mat,3,41.18,120.8,Consumer,Offline
+ORD-10507,2025-05-18,East,Electronics,USB-C Hub,4,64.18,258.64,Consumer,Online
+ORD-10508,2025-04-15,North,Electronics,USB-C Hub,5,58.46,296.78,Consumer,Online
+ORD-10509,2025-03-17,East,Home Office,Ergonomic Chair,5,335.53,1736.39,Consumer,Online
+ORD-10510,2025-02-06,South,Electronics,USB-C Hub,10,60.68,589.69,Corporate,Offline
+ORD-10511,2025-05-15,South,Electronics,Wireless Mouse,1,32.74,31.62,Small Business,Offline
+ORD-10512,2025-01-01,East,Beauty,Makeup Kit,1,50.41,48.58,Consumer,Online
+ORD-10513,2025-08-11,South,Kitchen,Blender,1,60.5,59.24,Consumer,Offline
+ORD-10514,2025-08-02,East,Home Office,Ergonomic Chair,6,280.66,1731.92,Consumer,Offline
+ORD-10515,2025-01-29,South,Kitchen,Coffee Maker,8,95.17,753.5,Corporate,Offline
+ORD-10516,2025-10-04,North,Beauty,Makeup Kit,4,40.43,167.44,Corporate,Offline
+ORD-10517,2025-12-04,East,Fitness,Adjustable Dumbbells,1,163.64,169.41,Small Business,Online
+ORD-10518,2025-12-24,West,Beauty,Makeup Kit,4,46.23,188.73,Corporate,Online
+ORD-10519,2025-07-10,North,Outdoor,Camping Tent,2,186.87,363.93,Corporate,Offline
+ORD-10520,2025-08-24,East,Electronics,Wireless Mouse,2,26.39,54.47,Consumer,Offline
+ORD-10521,2025-01-09,East,Kitchen,Air Fryer,5,94.07,481.9,Small Business,Online
+ORD-10522,2025-08-04,East,Beauty,Skin Care Set,5,57.24,290.19,Corporate,Offline
+ORD-10523,2025-11-13,North,Outdoor,Camping Tent,4,195.2,795.81,Consumer,Offline
+ORD-10524,2025-08-03,East,Kitchen,Blender,9,70.2,611.46,Corporate,Online
+ORD-10525,2025-02-01,North,Fitness,Yoga Mat,1,37.39,36.77,Consumer,Online
+ORD-10526,2025-02-24,East,Beauty,Skin Care Set,3,62.24,179.28,Small Business,Online
+ORD-10527,2025-04-18,West,Home Office,Standing Desk,5,560.26,2759.05,Consumer,Offline
+ORD-10528,2025-07-05,North,Electronics,Noise Cancelling Headphones,6,124.47,735.7,Corporate,Online
+ORD-10529,2025-09-02,North,Beauty,Skin Care Set,4,55.04,227.54,Consumer,Online
+ORD-10530,2025-08-11,East,Outdoor,Water Bottle,4,22.72,89.22,Corporate,Online
+ORD-10531,2025-10-04,East,Beauty,Makeup Kit,6,33.2,203.12,Corporate,Online
+ORD-10532,2025-01-20,West,Beauty,Hair Dryer,9,57.65,515.97,Corporate,Online
+ORD-10533,2025-09-12,West,Outdoor,Camping Tent,4,186.24,747.86,Consumer,Offline
+ORD-10534,2025-05-10,South,Outdoor,Water Bottle,4,28.76,115.93,Consumer,Offline
+ORD-10535,2025-12-08,North,Beauty,Makeup Kit,5,35.99,184.79,Corporate,Online
+ORD-10536,2025-05-01,West,Beauty,Skin Care Set,5,79.37,394.39,Small Business,Online
+ORD-10537,2025-02-23,West,Kitchen,Coffee Maker,7,112.81,785.33,Corporate,Online
+ORD-10538,2025-01-09,South,Electronics,Noise Cancelling Headphones,5,124.57,616.76,Corporate,Online
+ORD-10539,2025-05-16,West,Home Office,Ergonomic Chair,1,320.32,320.2,Consumer,Online
+ORD-10540,2025-12-02,West,Electronics,Wireless Mouse,4,27.1,108.68,Corporate,Offline
+ORD-10541,2025-12-30,South,Home Office,Ergonomic Chair,9,272.93,2551.91,Corporate,Online
+ORD-10542,2025-05-11,South,Home Office,Ergonomic Chair,5,354.69,1753.29,Consumer,Offline
+ORD-10543,2025-03-23,West,Fitness,Yoga Mat,5,33.87,173.61,Corporate,Online
+ORD-10544,2025-05-05,West,Electronics,Wireless Mouse,4,34.02,139.65,Corporate,Online
+ORD-10545,2025-08-06,North,Kitchen,Blender,5,65.46,327.96,Small Business,Offline
+ORD-10546,2025-09-21,North,Electronics,Wireless Mouse,3,22.34,64.87,Consumer,Offline
+ORD-10547,2025-04-25,West,Electronics,USB-C Hub,5,61.81,301.88,Corporate,Online
+ORD-10548,2025-05-08,North,Beauty,Skin Care Set,4,71.37,274.07,Consumer,Online
+ORD-10549,2025-08-29,East,Fitness,Adjustable Dumbbells,4,166.23,654.71,Small Business,Online
+ORD-10550,2025-05-24,East,Kitchen,Blender,1,91.35,92.71,Consumer,Online
+ORD-10551,2025-01-16,South,Electronics,USB-C Hub,5,58.87,301.83,Corporate,Offline
+ORD-10552,2025-10-14,West,Fitness,Resistance Bands,5,18.44,90.17,Consumer,Online
+ORD-10553,2025-09-21,East,Electronics,USB-C Hub,2,44.87,91.46,Corporate,Online
+ORD-10554,2025-06-15,West,Home Office,Desk Lamp,4,46.91,188.78,Corporate,Online
+ORD-10555,2025-01-30,East,Electronics,Wireless Mouse,5,26.33,128.01,Consumer,Offline
+ORD-10556,2025-06-11,West,Fitness,Adjustable Dumbbells,5,195.06,937.99,Consumer,Offline
+ORD-10557,2025-11-21,North,Electronics,Wireless Mouse,6,23.1,135.12,Consumer,Online
+ORD-10558,2025-06-04,East,Fitness,Yoga Mat,6,37.21,214.76,Consumer,Offline
+ORD-10559,2025-09-23,South,Beauty,Makeup Kit,7,38.77,273.54,Corporate,Online
+ORD-10560,2025-11-22,North,Outdoor,Trail Backpack,6,69.77,406.09,Consumer,Offline
+ORD-10561,2025-02-18,North,Fitness,Adjustable Dumbbells,6,191.93,1156.82,Corporate,Online
+ORD-10562,2025-04-17,South,Home Office,Standing Desk,5,547.47,2775.41,Consumer,Online
+ORD-10563,2025-09-17,South,Outdoor,Water Bottle,2,19.7,38.4,Consumer,Offline
+ORD-10564,2025-07-27,South,Kitchen,Coffee Maker,2,100.77,199.94,Small Business,Online
+ORD-10565,2025-09-27,West,Kitchen,Coffee Maker,5,92.79,456.2,Corporate,Online
+ORD-10566,2025-01-14,North,Kitchen,Air Fryer,2,97.44,189.8,Corporate,Offline
+ORD-10567,2025-02-11,North,Fitness,Resistance Bands,2,25.23,51.41,Corporate,Offline
+ORD-10568,2025-01-10,South,Electronics,Noise Cancelling Headphones,1,150.14,153.99,Consumer,Online
+ORD-10569,2025-07-17,North,Fitness,Yoga Mat,1,36.22,35.33,Consumer,Offline
+ORD-10570,2025-12-23,South,Home Office,Standing Desk,6,370.34,2279.26,Small Business,Online
+ORD-10571,2025-03-16,North,Electronics,USB-C Hub,1,57.75,58.4,Small Business,Online
+ORD-10572,2025-01-18,South,Outdoor,Trail Backpack,4,87.43,355.0,Corporate,Online
+ORD-10573,2025-07-13,South,Electronics,Noise Cancelling Headphones,4,150.14,590.88,Consumer,Offline
+ORD-10574,2025-02-09,North,Electronics,USB-C Hub,5,63.62,324.68,Consumer,Offline
+ORD-10575,2025-09-02,West,Fitness,Resistance Bands,6,20.89,125.7,Small Business,Online
+ORD-10576,2025-08-25,North,Kitchen,Air Fryer,1,93.9,94.66,Consumer,Offline
+ORD-10577,2025-06-21,West,Fitness,Resistance Bands,6,23.19,137.04,Corporate,Online
+ORD-10578,2025-02-20,South,Outdoor,Trail Backpack,5,88.3,454.82,Consumer,Online
+ORD-10579,2025-07-04,East,Outdoor,Water Bottle,1,26.3,26.23,Small Business,Online
+ORD-10580,2025-05-02,South,Fitness,Adjustable Dumbbells,2,233.96,449.25,Small Business,Offline
+ORD-10581,2025-06-30,East,Fitness,Resistance Bands,6,23.01,141.78,Consumer,Offline
+ORD-10582,2025-01-30,East,Fitness,Resistance Bands,6,19.7,120.08,Corporate,Online
+ORD-10583,2025-11-01,South,Electronics,USB-C Hub,2,39.41,75.86,Corporate,Offline
+ORD-10584,2025-06-27,South,Home Office,Standing Desk,8,460.46,3736.41,Corporate,Online
+ORD-10585,2025-07-24,West,Fitness,Yoga Mat,8,36.94,301.29,Corporate,Online
+ORD-10586,2025-09-09,West,Beauty,Hair Dryer,5,48.84,240.34,Consumer,Online
+ORD-10587,2025-03-10,South,Kitchen,Blender,9,72.32,626.45,Corporate,Online
+ORD-10588,2025-07-15,East,Electronics,Wireless Mouse,2,28.25,56.37,Small Business,Offline
+ORD-10589,2025-05-07,North,Outdoor,Trail Backpack,5,95.71,497.44,Small Business,Offline
+ORD-10590,2025-10-22,East,Outdoor,Water Bottle,2,19.09,36.68,Small Business,Online
+ORD-10591,2025-12-02,South,Electronics,Noise Cancelling Headphones,3,149.93,463.08,Consumer,Offline
+ORD-10592,2025-06-25,North,Kitchen,Blender,4,71.08,278.02,Consumer,Online
+ORD-10593,2025-08-01,West,Kitchen,Air Fryer,1,104.63,103.31,Consumer,Offline
+ORD-10594,2025-09-13,South,Beauty,Skin Care Set,2,55.05,107.49,Corporate,Online
+ORD-10595,2025-05-09,South,Home Office,Desk Lamp,4,40.42,163.83,Consumer,Offline
+ORD-10596,2025-07-02,North,Outdoor,Water Bottle,4,22.28,92.64,Consumer,Online
+ORD-10597,2025-04-28,North,Electronics,Noise Cancelling Headphones,3,168.34,488.01,Consumer,Offline
+ORD-10598,2025-07-26,South,Beauty,Hair Dryer,6,65.14,389.08,Corporate,Offline
+ORD-10599,2025-07-06,South,Home Office,Ergonomic Chair,7,252.9,1772.13,Corporate,Offline
+ORD-10600,2025-06-27,West,Electronics,USB-C Hub,5,60.27,308.03,Consumer,Online
+ORD-10601,2025-12-02,South,Outdoor,Water Bottle,6,21.05,122.29,Corporate,Online
+ORD-10602,2025-06-07,North,Beauty,Makeup Kit,6,53.11,321.88,Corporate,Offline
+ORD-10603,2025-01-25,West,Electronics,USB-C Hub,6,53.04,326.49,Consumer,Offline
+ORD-10604,2025-12-16,West,Outdoor,Trail Backpack,1,72.62,71.08,Consumer,Online
+ORD-10605,2025-12-10,North,Beauty,Makeup Kit,4,36.33,140.93,Consumer,Online
+ORD-10606,2025-10-22,East,Fitness,Resistance Bands,1,19.47,19.91,Consumer,Offline
+ORD-10607,2025-03-13,West,Electronics,USB-C Hub,2,72.78,143.07,Consumer,Offline
+ORD-10608,2025-01-26,West,Outdoor,Camping Tent,2,227.92,446.97,Small Business,Online
+ORD-10609,2025-12-27,North,Fitness,Yoga Mat,3,29.58,88.28,Corporate,Offline
+ORD-10610,2025-12-18,West,Outdoor,Trail Backpack,3,82.74,244.26,Consumer,Offline
+ORD-10611,2025-07-20,West,Electronics,USB-C Hub,5,51.57,247.67,Corporate,Online
+ORD-10612,2025-08-05,West,Home Office,Standing Desk,1,392.8,399.31,Small Business,Offline
+ORD-10613,2025-06-06,North,Kitchen,Coffee Maker,3,100.98,307.41,Consumer,Online
+ORD-10614,2025-02-08,West,Outdoor,Trail Backpack,4,112.01,443.67,Small Business,Online
+ORD-10615,2025-02-06,South,Kitchen,Coffee Maker,4,101.61,404.89,Corporate,Offline
+ORD-10616,2025-01-09,East,Home Office,Desk Lamp,4,41.86,164.22,Consumer,Offline
+ORD-10617,2025-04-26,South,Fitness,Yoga Mat,1,35.48,35.13,Consumer,Offline
+ORD-10618,2025-03-14,North,Fitness,Adjustable Dumbbells,4,188.05,730.06,Consumer,Online
+ORD-10619,2025-09-05,West,Electronics,USB-C Hub,6,48.78,304.13,Corporate,Offline
+ORD-10620,2025-07-29,North,Fitness,Resistance Bands,1,21.22,21.52,Consumer,Online
+ORD-10621,2025-11-02,East,Outdoor,Trail Backpack,2,78.36,153.04,Consumer,Offline
+ORD-10622,2025-07-28,South,Fitness,Yoga Mat,3,30.54,91.1,Consumer,Offline
+ORD-10623,2025-06-05,South,Home Office,Desk Lamp,1,45.14,45.03,Consumer,Offline
+ORD-10624,2025-08-19,West,Home Office,Standing Desk,7,422.51,3060.27,Corporate,Online
+ORD-10625,2025-06-20,North,Electronics,Wireless Mouse,1,34.47,34.27,Consumer,Offline
+ORD-10626,2025-05-23,East,Beauty,Skin Care Set,8,79.17,639.44,Corporate,Offline
+ORD-10627,2025-06-23,North,Home Office,Standing Desk,7,494.11,3363.49,Corporate,Online
+ORD-10628,2025-11-02,North,Beauty,Skin Care Set,5,56.46,286.0,Small Business,Offline
+ORD-10629,2025-10-27,West,Fitness,Resistance Bands,2,19.43,37.38,Consumer,Online
+ORD-10630,2025-08-28,South,Electronics,Wireless Mouse,2,24.75,48.68,Consumer,Offline
+ORD-10631,2025-01-15,West,Home Office,Standing Desk,7,451.36,3060.75,Corporate,Offline
+ORD-10632,2025-07-31,East,Electronics,Wireless Mouse,5,30.68,156.51,Small Business,Online
+ORD-10633,2025-02-26,West,Home Office,Desk Lamp,4,45.33,185.77,Consumer,Offline
+ORD-10634,2025-04-10,North,Fitness,Adjustable Dumbbells,8,219.12,1696.3,Corporate,Online
+ORD-10635,2025-11-16,North,Fitness,Resistance Bands,2,20.04,39.38,Consumer,Offline
+ORD-10636,2025-02-26,South,Home Office,Ergonomic Chair,1,300.23,288.91,Consumer,Online
+ORD-10637,2025-01-19,West,Kitchen,Coffee Maker,6,91.35,550.27,Consumer,Online
+ORD-10638,2025-01-19,North,Electronics,USB-C Hub,5,59.51,294.26,Consumer,Offline
+ORD-10639,2025-03-19,West,Fitness,Resistance Bands,4,24.3,93.78,Corporate,Offline
+ORD-10640,2025-08-06,South,Fitness,Yoga Mat,1,31.53,32.61,Consumer,Offline
+ORD-10641,2025-06-08,West,Electronics,USB-C Hub,1,56.28,55.01,Consumer,Offline
+ORD-10642,2025-01-24,East,Electronics,Wireless Mouse,3,29.02,88.22,Corporate,Online
+ORD-10643,2025-01-12,South,Home Office,Ergonomic Chair,4,308.93,1268.83,Consumer,Online
+ORD-10644,2025-12-24,South,Outdoor,Trail Backpack,6,82.19,485.7,Small Business,Offline
+ORD-10645,2025-03-06,East,Kitchen,Air Fryer,1,118.82,120.54,Consumer,Offline
+ORD-10646,2025-06-23,East,Kitchen,Coffee Maker,4,111.97,453.23,Consumer,Offline
+ORD-10647,2025-11-19,South,Electronics,Noise Cancelling Headphones,2,134.06,267.33,Small Business,Offline
+ORD-10648,2025-09-12,North,Outdoor,Trail Backpack,4,79.52,308.59,Small Business,Online
+ORD-10649,2025-01-26,East,Outdoor,Water Bottle,1,24.15,24.51,Consumer,Offline
+ORD-10650,2025-02-26,East,Outdoor,Water Bottle,3,24.27,70.33,Consumer,Offline
+ORD-10651,2025-08-27,West,Electronics,Noise Cancelling Headphones,2,144.78,289.62,Small Business,Online
+ORD-10652,2025-06-13,East,Fitness,Adjustable Dumbbells,1,187.18,187.87,Corporate,Online
+ORD-10653,2025-12-30,South,Home Office,Desk Lamp,1,30.08,31.05,Consumer,Online
+ORD-10654,2025-06-26,East,Beauty,Makeup Kit,5,54.45,279.29,Corporate,Online
+ORD-10655,2025-04-20,South,Fitness,Resistance Bands,1,24.44,25.04,Consumer,Online
+ORD-10656,2025-09-05,South,Home Office,Standing Desk,8,314.36,2463.35,Corporate,Offline
+ORD-10657,2025-09-17,South,Home Office,Standing Desk,8,361.27,2956.02,Corporate,Online
+ORD-10658,2025-10-16,West,Beauty,Skin Care Set,7,55.52,403.22,Corporate,Online
+ORD-10659,2025-03-14,East,Kitchen,Coffee Maker,1,117.74,118.96,Consumer,Offline
+ORD-10660,2025-07-14,North,Kitchen,Blender,5,79.91,410.88,Consumer,Offline
+ORD-10661,2025-09-05,South,Electronics,USB-C Hub,3,46.74,138.0,Small Business,Online
+ORD-10662,2025-01-09,North,Home Office,Standing Desk,5,393.17,1914.62,Consumer,Offline
+ORD-10663,2025-03-01,East,Fitness,Adjustable Dumbbells,5,201.98,1043.38,Consumer,Online
+ORD-10664,2025-07-10,East,Beauty,Skin Care Set,4,58.1,227.08,Small Business,Offline
+ORD-10665,2025-03-01,East,Fitness,Yoga Mat,1,32.54,33.22,Consumer,Online
+ORD-10666,2025-07-26,West,Electronics,USB-C Hub,5,61.35,304.91,Small Business,Offline
+ORD-10667,2025-12-13,North,Beauty,Skin Care Set,5,62.81,318.9,Corporate,Online
+ORD-10668,2025-04-18,East,Electronics,USB-C Hub,4,58.94,240.39,Consumer,Online
+ORD-10669,2025-04-04,East,Electronics,USB-C Hub,8,62.5,488.14,Corporate,Online
+ORD-10670,2025-09-15,West,Electronics,Noise Cancelling Headphones,5,141.77,682.17,Consumer,Online
+ORD-10671,2025-06-07,North,Home Office,Ergonomic Chair,1,286.41,283.11,Small Business,Offline
+ORD-10672,2025-08-17,South,Fitness,Adjustable Dumbbells,3,164.66,498.66,Consumer,Offline
+ORD-10673,2025-06-29,East,Outdoor,Camping Tent,1,256.64,264.07,Consumer,Offline
+ORD-10674,2025-04-02,East,Electronics,USB-C Hub,2,58.62,117.63,Consumer,Online
+ORD-10675,2025-09-18,North,Outdoor,Trail Backpack,1,83.5,84.34,Consumer,Offline
+ORD-10676,2025-06-23,North,Fitness,Resistance Bands,2,22.59,44.9,Consumer,Offline
+ORD-10677,2025-09-12,West,Kitchen,Air Fryer,6,84.98,499.68,Consumer,Online
+ORD-10678,2025-09-05,North,Beauty,Hair Dryer,5,52.5,255.19,Small Business,Online
+ORD-10679,2025-09-03,East,Outdoor,Trail Backpack,6,80.49,497.27,Corporate,Offline
+ORD-10680,2025-03-28,South,Electronics,Noise Cancelling Headphones,6,163.09,945.54,Corporate,Online
+ORD-10681,2025-06-18,West,Fitness,Resistance Bands,5,22.2,107.72,Small Business,Online
+ORD-10682,2025-10-01,South,Fitness,Resistance Bands,4,16.41,64.58,Consumer,Offline
+ORD-10683,2025-04-25,West,Kitchen,Air Fryer,6,118.78,687.27,Consumer,Online
+ORD-10684,2025-09-12,East,Electronics,USB-C Hub,4,47.56,195.97,Consumer,Online
+ORD-10685,2025-04-14,West,Kitchen,Coffee Maker,6,104.86,621.73,Consumer,Offline
+ORD-10686,2025-03-22,West,Beauty,Makeup Kit,2,64.36,127.44,Small Business,Offline
+ORD-10687,2025-07-30,North,Fitness,Adjustable Dumbbells,5,184.25,941.81,Consumer,Online
+ORD-10688,2025-07-14,East,Electronics,USB-C Hub,8,58.37,475.3,Corporate,Offline
+ORD-10689,2025-06-28,South,Electronics,Noise Cancelling Headphones,3,175.67,541.77,Consumer,Offline
+ORD-10690,2025-01-09,North,Home Office,Desk Lamp,1,38.9,40.12,Consumer,Online
+ORD-10691,2025-10-17,South,Kitchen,Blender,3,64.97,191.05,Consumer,Online
+ORD-10692,2025-11-23,North,Kitchen,Coffee Maker,2,78.05,156.52,Consumer,Offline
+ORD-10693,2025-11-11,North,Outdoor,Camping Tent,3,185.47,544.47,Corporate,Online
+ORD-10694,2025-10-07,West,Outdoor,Trail Backpack,5,66.4,333.5,Consumer,Online
+ORD-10695,2025-07-03,East,Beauty,Makeup Kit,5,50.56,247.3,Consumer,Offline
+ORD-10696,2025-08-20,West,Electronics,Wireless Mouse,4,25.73,100.55,Consumer,Offline
+ORD-10697,2025-06-28,North,Electronics,Noise Cancelling Headphones,5,158.93,799.31,Small Business,Offline
+ORD-10698,2025-03-10,West,Fitness,Resistance Bands,5,28.98,144.51,Consumer,Offline
+ORD-10699,2025-05-10,West,Home Office,Desk Lamp,4,45.44,182.17,Consumer,Offline
+ORD-10700,2025-06-17,North,Beauty,Skin Care Set,8,63.54,511.64,Corporate,Online
+ORD-10701,2025-02-13,North,Kitchen,Blender,6,74.13,459.36,Corporate,Offline
+ORD-10702,2025-01-27,South,Outdoor,Trail Backpack,2,90.49,174.05,Consumer,Online
+ORD-10703,2025-04-23,East,Home Office,Desk Lamp,5,48.5,242.13,Consumer,Offline
+ORD-10704,2025-09-21,West,Fitness,Adjustable Dumbbells,4,188.07,749.11,Consumer,Online
+ORD-10705,2025-08-20,West,Kitchen,Blender,4,60.41,250.95,Consumer,Online
+ORD-10706,2025-04-04,South,Home Office,Desk Lamp,5,49.86,257.61,Consumer,Online
+ORD-10707,2025-10-24,South,Home Office,Ergonomic Chair,4,248.56,1005.54,Corporate,Online
+ORD-10708,2025-01-19,West,Home Office,Ergonomic Chair,5,257.26,1290.21,Consumer,Online
+ORD-10709,2025-01-17,East,Electronics,USB-C Hub,4,51.7,210.96,Consumer,Online
+ORD-10710,2025-09-13,West,Home Office,Ergonomic Chair,8,246.9,1997.81,Corporate,Offline
+ORD-10711,2025-05-31,South,Fitness,Yoga Mat,2,37.72,77.0,Consumer,Offline
+ORD-10712,2025-05-17,North,Kitchen,Air Fryer,5,112.67,547.96,Corporate,Offline
+ORD-10713,2025-10-22,North,Kitchen,Coffee Maker,6,79.14,468.68,Corporate,Online
+ORD-10714,2025-04-06,North,Beauty,Makeup Kit,1,52.18,50.7,Consumer,Offline
+ORD-10715,2025-11-06,East,Kitchen,Air Fryer,6,102.16,589.89,Small Business,Online
+ORD-10716,2025-01-20,West,Electronics,USB-C Hub,2,58.6,113.62,Consumer,Online
+ORD-10717,2025-02-25,East,Kitchen,Blender,6,86.28,509.18,Small Business,Offline
+ORD-10718,2025-09-12,East,Home Office,Ergonomic Chair,6,244.94,1433.0,Corporate,Online
+ORD-10719,2025-12-08,West,Home Office,Standing Desk,8,387.96,3155.98,Corporate,Offline
+ORD-10720,2025-06-01,North,Kitchen,Coffee Maker,5,90.08,439.92,Consumer,Online
+ORD-10721,2025-12-20,South,Kitchen,Blender,9,69.17,606.65,Corporate,Offline
+ORD-10722,2025-12-10,South,Fitness,Resistance Bands,2,18.78,38.84,Consumer,Offline
+ORD-10723,2025-05-31,South,Electronics,Noise Cancelling Headphones,2,165.15,324.87,Small Business,Online
+ORD-10724,2025-03-19,East,Beauty,Skin Care Set,7,76.17,521.04,Corporate,Online
+ORD-10725,2025-08-04,East,Outdoor,Water Bottle,5,23.95,116.15,Consumer,Offline
+ORD-10726,2025-12-03,South,Fitness,Adjustable Dumbbells,2,150.47,308.19,Consumer,Online
+ORD-10727,2025-05-18,East,Electronics,Noise Cancelling Headphones,3,182.8,531.22,Small Business,Online
+ORD-10728,2025-06-12,North,Electronics,USB-C Hub,6,48.97,299.78,Small Business,Online
+ORD-10729,2025-08-09,North,Electronics,Wireless Mouse,3,28.05,81.67,Small Business,Offline
+ORD-10730,2025-08-02,East,Electronics,USB-C Hub,5,49.12,241.04,Corporate,Online
+ORD-10731,2025-07-28,West,Home Office,Standing Desk,3,463.31,1349.66,Small Business,Offline
+ORD-10732,2025-01-31,West,Outdoor,Water Bottle,3,27.05,78.9,Small Business,Offline
+ORD-10733,2025-05-20,North,Fitness,Adjustable Dumbbells,6,199.76,1169.19,Consumer,Offline
+ORD-10734,2025-03-26,East,Kitchen,Coffee Maker,3,97.13,288.95,Corporate,Online
+ORD-10735,2025-01-27,South,Kitchen,Blender,6,73.0,423.74,Corporate,Online
+ORD-10736,2025-09-08,East,Outdoor,Camping Tent,6,161.96,940.31,Consumer,Offline
+ORD-10737,2025-05-11,North,Fitness,Adjustable Dumbbells,3,195.04,597.62,Corporate,Online
+ORD-10738,2025-08-07,North,Kitchen,Coffee Maker,4,76.15,307.64,Small Business,Offline
+ORD-10739,2025-08-29,North,Electronics,Wireless Mouse,4,23.21,93.17,Consumer,Online
+ORD-10740,2025-04-07,East,Beauty,Makeup Kit,6,51.83,313.92,Small Business,Offline
+ORD-10741,2025-12-09,South,Fitness,Resistance Bands,6,22.75,140.51,Small Business,Offline
+ORD-10742,2025-03-15,East,Fitness,Yoga Mat,5,37.86,189.92,Corporate,Online
+ORD-10743,2025-04-21,South,Home Office,Ergonomic Chair,6,316.42,1882.02,Consumer,Online
+ORD-10744,2025-07-20,West,Home Office,Standing Desk,4,416.81,1667.77,Consumer,Offline
+ORD-10745,2025-07-28,South,Outdoor,Water Bottle,4,23.31,89.52,Corporate,Offline
+ORD-10746,2025-07-18,South,Home Office,Ergonomic Chair,6,310.71,1843.17,Consumer,Online
+ORD-10747,2025-07-05,East,Electronics,Wireless Mouse,10,26.13,270.54,Corporate,Online
+ORD-10748,2025-09-20,East,Electronics,Noise Cancelling Headphones,3,112.48,330.76,Corporate,Online
+ORD-10749,2025-11-16,South,Kitchen,Blender,6,59.91,366.9,Consumer,Offline
+ORD-10750,2025-10-25,West,Beauty,Hair Dryer,3,49.37,152.77,Small Business,Online
+ORD-10751,2025-10-01,South,Home Office,Ergonomic Chair,6,244.4,1523.19,Consumer,Online
+ORD-10752,2025-12-28,East,Electronics,Noise Cancelling Headphones,7,113.19,774.71,Corporate,Online
+ORD-10753,2025-03-18,East,Fitness,Adjustable Dumbbells,5,239.46,1225.37,Corporate,Offline
+ORD-10754,2025-06-08,South,Beauty,Hair Dryer,5,72.27,358.27,Consumer,Offline
+ORD-10755,2025-09-23,West,Fitness,Adjustable Dumbbells,5,184.92,942.59,Consumer,Offline
+ORD-10756,2025-06-29,South,Home Office,Desk Lamp,5,40.6,195.7,Consumer,Online
+ORD-10757,2025-03-04,North,Beauty,Skin Care Set,8,69.87,538.29,Corporate,Offline
+ORD-10758,2025-10-13,South,Outdoor,Trail Backpack,1,74.31,72.54,Consumer,Offline
+ORD-10759,2025-03-24,West,Electronics,Wireless Mouse,3,33.07,101.08,Corporate,Online
+ORD-10760,2025-01-01,East,Outdoor,Water Bottle,5,22.33,112.93,Corporate,Online
+ORD-10761,2025-09-26,West,Outdoor,Water Bottle,6,20.73,121.52,Consumer,Offline
+ORD-10762,2025-03-18,South,Electronics,USB-C Hub,1,52.99,52.06,Consumer,Online
+ORD-10763,2025-07-29,East,Kitchen,Air Fryer,2,121.11,248.01,Consumer,Online
+ORD-10764,2025-08-02,South,Electronics,USB-C Hub,1,48.81,47.08,Consumer,Online
+ORD-10765,2025-01-28,South,Home Office,Standing Desk,2,407.87,793.04,Consumer,Online
+ORD-10766,2025-09-22,South,Fitness,Yoga Mat,3,29.09,85.98,Small Business,Online
+ORD-10767,2025-04-02,West,Electronics,Noise Cancelling Headphones,1,191.89,197.37,Small Business,Offline
+ORD-10768,2025-03-15,West,Home Office,Ergonomic Chair,6,346.75,2084.89,Consumer,Online
+ORD-10769,2025-02-23,East,Kitchen,Air Fryer,9,105.56,948.89,Corporate,Offline
+ORD-10770,2025-06-05,North,Beauty,Hair Dryer,1,67.02,66.47,Consumer,Online
+ORD-10771,2025-10-25,East,Outdoor,Camping Tent,7,195.38,1331.05,Corporate,Offline
+ORD-10772,2025-07-04,South,Home Office,Standing Desk,6,401.17,2388.22,Consumer,Online
+ORD-10773,2025-05-15,East,Kitchen,Air Fryer,5,135.19,685.89,Corporate,Offline
+ORD-10774,2025-02-07,South,Electronics,USB-C Hub,2,51.44,103.58,Small Business,Online
+ORD-10775,2025-03-19,South,Kitchen,Blender,6,81.38,474.86,Consumer,Online
+ORD-10776,2025-12-04,South,Fitness,Adjustable Dumbbells,5,153.42,778.81,Consumer,Online
+ORD-10777,2025-08-18,West,Home Office,Desk Lamp,5,36.15,178.21,Consumer,Online
+ORD-10778,2025-07-27,North,Kitchen,Coffee Maker,3,85.27,263.35,Consumer,Online
+ORD-10779,2025-07-31,South,Home Office,Standing Desk,1,367.07,353.93,Consumer,Online
+ORD-10780,2025-01-05,South,Outdoor,Water Bottle,5,21.31,107.53,Consumer,Offline
+ORD-10781,2025-07-06,South,Fitness,Adjustable Dumbbells,8,190.05,1553.84,Corporate,Online
+ORD-10782,2025-12-31,West,Kitchen,Air Fryer,3,105.18,322.48,Small Business,Online
+ORD-10783,2025-05-24,West,Kitchen,Blender,6,83.01,506.1,Consumer,Online
+ORD-10784,2025-06-18,East,Electronics,USB-C Hub,5,48.61,245.27,Corporate,Online
+ORD-10785,2025-05-31,North,Electronics,Noise Cancelling Headphones,4,160.47,622.51,Small Business,Offline
+ORD-10786,2025-03-22,West,Beauty,Makeup Kit,5,59.28,293.66,Small Business,Online
+ORD-10787,2025-11-17,East,Beauty,Hair Dryer,4,44.81,179.49,Corporate,Online
+ORD-10788,2025-10-06,West,Kitchen,Air Fryer,6,105.2,607.58,Consumer,Online
+ORD-10789,2025-02-10,West,Kitchen,Air Fryer,2,144.31,295.34,Small Business,Offline
+ORD-10790,2025-06-17,South,Outdoor,Water Bottle,1,24.55,25.22,Consumer,Offline
+ORD-10791,2025-08-21,North,Electronics,USB-C Hub,2,54.31,111.83,Consumer,Offline
+ORD-10792,2025-03-08,South,Kitchen,Coffee Maker,5,100.51,499.47,Corporate,Online
+ORD-10793,2025-05-19,West,Electronics,Wireless Mouse,3,32.91,95.41,Corporate,Offline
+ORD-10794,2025-10-11,South,Outdoor,Trail Backpack,2,74.55,150.82,Consumer,Offline
+ORD-10795,2025-11-18,West,Electronics,Wireless Mouse,5,27.11,134.34,Corporate,Offline
+ORD-10796,2025-05-19,East,Electronics,Wireless Mouse,6,33.97,207.56,Consumer,Online
+ORD-10797,2025-08-02,North,Beauty,Skin Care Set,2,55.34,109.31,Consumer,Online
+ORD-10798,2025-02-02,North,Kitchen,Coffee Maker,9,116.71,1050.07,Corporate,Offline
+ORD-10799,2025-03-09,East,Kitchen,Coffee Maker,10,122.4,1268.16,Corporate,Offline
+ORD-10800,2025-01-07,East,Electronics,Noise Cancelling Headphones,6,158.99,986.93,Consumer,Online

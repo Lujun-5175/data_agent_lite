@@ -76,6 +76,13 @@ def test_ml_intent_clear_match():
     assert any("logistic regression" in reason.lower() for reason in decision.reasons)
 
 
+def test_agent_ml_intent_helper_uses_routing_rule():
+    from src.agent import get_ml_intent_decision
+
+    decision = get_ml_intent_decision("请训练一个 baseline logistic regression 模型预测 churn")
+    assert decision.matched is True
+
+
 def test_stats_query_should_not_trigger_ml():
     decision = decide_ml_intent(RoutingContext(message="请做卡方检验，查看 Contract 与 Churn 是否相关"))
     assert decision.matched is False

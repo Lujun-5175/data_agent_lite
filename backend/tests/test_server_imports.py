@@ -41,3 +41,38 @@ print('ok')
     )
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
+
+
+def test_server_import_requires_cors_origins_in_production():
+    backend_root = Path(__file__).resolve().parents[1]
+    script = """
+import os
+import sys
+from pathlib import Path
+
+repo_backend = Path(r'__BACKEND_ROOT__')
+sys.path.insert(0, str(repo_backend))
+os.environ['APP_ENV'] = 'production'
+os.environ.pop('CORS_ALLOW_ORIGINS', None)
+
+try:
+    import src.server  # noqa: F401
+except RuntimeError as exc:
+    assert 'CORS_ALLOW_ORIGINS' in str(exc)
+    print('ok')
+else:
+    raise AssertionError('production import should require CORS_ALLOW_ORIGINS')
+"""
+    script = script.replace("__BACKEND_ROOT__", str(backend_root).replace("\\", "\\\\"))
+    env = dict(os.environ)
+    env.pop("CORS_ALLOW_ORIGINS", None)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(backend_root),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout

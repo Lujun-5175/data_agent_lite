@@ -13,7 +13,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from src.data_manager import get_data_info, get_dataset
-from src.routing_rules import RoutingContext, decide_dataset_required, decide_stats_intent, interpret_request
+from src.routing_rules import (
+    RoutingContext,
+    decide_dataset_required,
+    decide_ml_intent,
+    decide_stats_intent,
+    interpret_request,
+)
 from src.tools import (
     fig_inter,
     ml_execute,

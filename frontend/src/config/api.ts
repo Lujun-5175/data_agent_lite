@@ -1,6 +1,13 @@
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8002';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+function resolveApiBaseUrl() {
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  if (import.meta.env.DEV) return DEFAULT_API_BASE_URL;
+  throw new Error('VITE_API_BASE_URL must be configured for production builds.');
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 const buildApiUrl = (path: string) => `${API_BASE_URL}${path}`;
 

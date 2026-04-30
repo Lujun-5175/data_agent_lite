@@ -35,6 +35,7 @@ def _build_env():
         ("exec('print(1)')", "exec"),
         ("print(data._df)", "敏感属性"),
         ("print(df.to_excel('x.xlsx'))", "to_excel"),
+        ("writer = df['x'].to_csv\nwriter('x.csv')", "to_csv"),
     ],
 )
 def test_python_guardrails_block_dangerous_code(tmp_path: Path, code: str, needle: str):
@@ -42,6 +43,23 @@ def test_python_guardrails_block_dangerous_code(tmp_path: Path, code: str, needl
     with pytest.raises(SafeExecutionError) as exc_info:
         executor.safe_execute_python(code, _build_env())
     assert needle in str(exc_info.value)
+
+
+def test_python_guardrails_do_not_write_via_method_alias(tmp_path: Path):
+    executor = SafePythonExecutor(image_dir=tmp_path)
+    output_path = tmp_path / "leak.csv"
+    code = f"writer = df['x'].to_csv\nwriter(r'{output_path.as_posix()}')"
+
+    with pytest.raises(SafeExecutionError):
+        executor.safe_execute_python(code, _build_env())
+
+    assert not output_path.exists()
+
+
+def test_read_only_dataframe_proxy_still_supports_filtering(tmp_path: Path):
+    executor = SafePythonExecutor(image_dir=tmp_path)
+    result = executor.safe_execute_python("print(df[df['x'] > 1].shape)", _build_env())
+    assert "(2, 3)" in result
 
 
 def test_plot_code_cannot_save_arbitrary_paths(tmp_path: Path):

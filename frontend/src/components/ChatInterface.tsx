@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
+  BarChart3,
   FileSpreadsheet,
   GripVertical,
   Image as ImageIcon,
@@ -15,6 +16,7 @@ import {
 import { toast } from 'sonner';
 import { API_ENDPOINTS, getFriendlyErrorMessage, readApiErrorInfo } from '../config/api';
 import { CHAT_SHELL_CLASS } from '../config/layout';
+import { SAMPLE_DATASETS, type SampleDataset } from '../config/sampleDatasets';
 import type { ServerUploadResponse, UploadedDataset } from '../types/data';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -221,6 +223,101 @@ function ResizablePreviewPanel({
   );
 }
 
+function SampleDataPanel({
+  samples,
+  loadingSampleId,
+  disabled,
+  onSelect,
+}: {
+  samples: SampleDataset[];
+  loadingSampleId: string | null;
+  disabled: boolean;
+  onSelect: (sample: SampleDataset) => void;
+}) {
+  return (
+    <section className="rounded-[24px] border border-slate-200/80 bg-white/82 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.045)] backdrop-blur-sm md:p-5">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Try with Sample Data
+          </div>
+          <h2 className="mt-3 text-lg font-semibold tracking-tight text-slate-950 md:text-xl">
+            Start exploring in one click
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+            Pick a realistic dataset and jump straight into analysis, charts, and statistical tests.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        {samples.map((sample) => {
+          const isLoading = loadingSampleId === sample.id;
+          return (
+            <article
+              key={sample.id}
+              className="flex min-h-[210px] flex-col rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)]"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-slate-200 bg-slate-50 text-slate-700">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-slate-950">{sample.name}</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">{sample.description}</p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+                {sample.columnCount} columns x {sample.rowCount.toLocaleString()} rows
+              </div>
+              <Button
+                type="button"
+                onClick={() => onSelect(sample)}
+                disabled={disabled || isLoading}
+                className="mt-auto h-11 rounded-[14px] border border-slate-900 bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                {isLoading ? 'Loading sample data...' : 'Try this dataset'}
+              </Button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SuggestedPrompts({
+  prompts,
+  disabled,
+  onSelect,
+}: {
+  prompts: string[];
+  disabled: boolean;
+  onSelect: (prompt: string) => void;
+}) {
+  if (prompts.length === 0) return null;
+
+  return (
+    <div className="rounded-[18px] border border-slate-200/80 bg-white/78 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Suggested prompts</div>
+      <div className="flex flex-wrap gap-2">
+        {prompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={() => onSelect(prompt)}
+            disabled={disabled}
+            className="min-h-11 max-w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium leading-5 text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChatBubble({ message }: { message: Message }) {
   const isUser = message.type === 'user';
   const isStatus = message.kind === 'status';
@@ -285,8 +382,10 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [loadingSampleId, setLoadingSampleId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [uploadedDataset, setUploadedDataset] = useState<UploadedDataset | null>(null);
+  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
   const statusMessageIdRef = useRef<string | null>(null);
@@ -298,8 +397,10 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
     setInputValue('');
     setIsLoading(false);
     setIsUploading(false);
+    setLoadingSampleId(null);
     setIsDeleting(false);
     setUploadedDataset(null);
+    setSuggestedPrompts([]);
     assistantMessageIdRef.current = null;
     statusMessageIdRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -319,7 +420,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
 
   const handleFileUploadClick = () => fileInputRef.current?.click();
 
-  const handleFileSelect = async (file: File) => {
+  const handleFileSelect = async (file: File, options?: { sample?: SampleDataset }) => {
     if (!file.name.toLowerCase().endsWith('.csv')) {
       const message = '请上传 CSV 格式的文件';
       toast.error(message);
@@ -343,6 +444,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
       const result = (await response.json()) as ServerUploadResponse;
       const dataset = normalizeUploadedDataset(result, file.name);
       setUploadedDataset(dataset);
+      setSuggestedPrompts(options?.sample?.prompts ?? []);
       setMessages((prev) => [
         ...prev.filter((msg) => msg.kind !== 'dataset_card'),
         {
@@ -354,7 +456,11 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
           timestamp: new Date(),
         },
       ]);
-      toast.success(result.message || `成功加载文件【${dataset.filename}】`);
+      toast.success(
+        options?.sample
+          ? `Sample dataset loaded: ${options.sample.name}`
+          : result.message || `成功加载文件【${dataset.filename}】`
+      );
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (error) {
       const message = error instanceof Error ? error.message : '文件上传失败，请检查后端服务是否正常运行';
@@ -368,6 +474,30 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
     }
   };
 
+  const handleSampleDatasetSelect = async (sample: SampleDataset) => {
+    if (isUploading || isLoading || loadingSampleId) return;
+
+    setLoadingSampleId(sample.id);
+    try {
+      const response = await fetch(sample.path);
+      if (!response.ok) {
+        throw new Error(`Unable to load sample dataset: ${sample.filename}`);
+      }
+      const csvBlob = await response.blob();
+      const csvFile = new File([csvBlob], sample.filename, { type: 'text/csv' });
+      await handleFileSelect(csvFile, { sample });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load sample dataset';
+      setMessages((prev) => [
+        ...prev,
+        { id: `error-${Date.now()}`, type: 'assistant', kind: 'error', content: message, timestamp: new Date() },
+      ]);
+      toast.error(message);
+    } finally {
+      setLoadingSampleId(null);
+    }
+  };
+
   const handleDeleteDataset = async (targetDatasetId: string) => {
     if (!targetDatasetId) return;
     setIsDeleting(true);
@@ -378,6 +508,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
         throw new Error(getFriendlyErrorMessage(code, message));
       }
       setUploadedDataset(null);
+      setSuggestedPrompts([]);
       setMessages((prev) => prev.filter((msg) => msg.kind !== 'dataset_card'));
       setMessages((prev) => [
         ...prev,
@@ -439,13 +570,14 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
     ]);
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+  const handleSendMessage = async (messageOverride?: string) => {
+    const outgoingContent = (messageOverride ?? inputValue).trim();
+    if (!outgoingContent || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
-      content: inputValue,
+      content: outgoingContent,
       timestamp: new Date(),
       kind: 'text',
     };
@@ -598,6 +730,21 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
         <div className="h-full overflow-y-auto custom-scrollbar py-4 md:py-5">
           <div className={`${CHAT_SHELL_CLASS} pb-5 pt-1 md:pb-6 md:pt-2`}>
             <div className="flex w-full flex-col gap-4">
+              {!uploadedDataset && (
+                <SampleDataPanel
+                  samples={SAMPLE_DATASETS}
+                  loadingSampleId={loadingSampleId}
+                  disabled={isUploading || isLoading || loadingSampleId !== null}
+                  onSelect={(sample) => void handleSampleDatasetSelect(sample)}
+                />
+              )}
+
+              <SuggestedPrompts
+                prompts={suggestedPrompts}
+                disabled={isLoading}
+                onSelect={(prompt) => void handleSendMessage(prompt)}
+              />
+
               {messages.map((message) => {
                 if (message.kind === 'image') {
                   return <ImageCard key={message.id} message={message} />;
@@ -689,7 +836,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
 
               <Button
                 type="button"
-                onClick={handleSendMessage}
+                onClick={() => void handleSendMessage()}
                 disabled={!inputValue.trim() || isLoading}
                 className="h-11 w-11 shrink-0 rounded-[16px] border border-slate-900 bg-slate-900 px-0 text-white shadow-[0_4px_12px_rgba(15,23,42,0.10)] hover:bg-slate-800"
               >
