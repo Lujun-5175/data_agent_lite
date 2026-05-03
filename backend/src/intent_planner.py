@@ -13,7 +13,10 @@ from pydantic import BaseModel, Field, ValidationError
 logger = logging.getLogger(__name__)
 
 INTENT_PLANNER_MODEL: Any | None = None
-DEFAULT_INTENT_PLANNER_MODEL = os.getenv("INTENT_PLANNER_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+DEFAULT_INTENT_PLANNER_MODEL = os.getenv(
+    "INTENT_PLANNER_MODEL",
+    os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+)
 
 
 class IntentInterpretationPayload(BaseModel):

@@ -128,7 +128,7 @@ npm run dev
 
 ```env
 DEEPSEEK_API_KEY=your_deepseek_api_key
-DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-chat
 # 可选：生产环境显式 CORS 白名单（逗号分隔）
 CORS_ALLOW_ORIGINS=https://your-frontend.example.com
 ```

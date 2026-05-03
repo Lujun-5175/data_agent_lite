@@ -24,13 +24,16 @@ from src.tools import (
     bind_current_dataset_id,
     fig_inter,
     ml_execute,
+    stats_execute,
     python_inter,
 )
 
 logger = logging.getLogger(__name__)
 load_dotenv(override=True)
 
-DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+# Use the non-thinking model by default to avoid DeepSeek reasoning_content
+# round-trip errors in LangGraph agent tool loops.
+DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 
 class AgentContext(BaseModel):
@@ -106,6 +109,7 @@ model = ChatDeepSeek(
 
 tools = [
     python_inter,
+    stats_execute,
     fig_inter,
     ml_execute,
 ]
@@ -308,11 +312,11 @@ def dataset_context_middleware(request) -> str:
         elif interpretation.intent_type == "followup":
             route_hint = "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
         elif stats_decision.matched:
-            route_hint = f"检测到统计意图（stats score={stats_decision.score:.2f}），优先使用 stats.* helper。"
+            route_hint = f"检测到统计意图（stats score={stats_decision.score:.2f}），优先使用 stats_execute。"
         else:
             route_hint = (
                 "先根据 interpretation 选择最小必要工具。"
-                "统计问题优先 stats.*，探索性分析优先 python_inter 或 stats.*，"
+                "统计问题优先 stats_execute，探索性分析优先 python_inter，"
                 "明确建模请求才使用 `ml_execute`，绘图需求使用 `fig_inter`。"
             )
 
@@ -328,7 +332,7 @@ def dataset_context_middleware(request) -> str:
 1. 对“基于数据的问题”优先调用工具：数据理解/预处理问题优先 `profile.*`，统计分析优先 `stats.*`，明确建模请求再用 `ml_execute`，图表需求用 `fig_inter`。
 2. 变量 `df` 是只读数据视图；`data`、`viz`、`stats`、`profile`、`ml` 是白名单 helper API。优先用 helper API，不要依赖未声明能力。
    对于明确建模请求，先判断是否确实需要训练/评估模型再决定是否调用 `ml_execute`；不要把分析性请求误判成建模请求。
-   对于探索性分析、过滤、聚合、比较、概览，请优先使用 `python_inter` 或 `stats.*`，必要时再补 `ml_execute`。
+   对于统计分析、过滤、聚合、比较、概览，请优先使用 `stats_execute`；只有需要更自由的探索性分析或绘图逻辑时，再使用 `python_inter`。
 3. 只能基于当前数据集和工具输出作答；禁止臆测缺失数据、禁止虚构计算结果。
 4. 分析时先完成计算再回答，不要只给思路。若结果为空或样本不足，要明确说明并给出可执行下一步。
 5. 绘图任务要给出简短结论（图展示了什么）并保持标题/轴含义清晰。

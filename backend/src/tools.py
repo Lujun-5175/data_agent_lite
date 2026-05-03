@@ -1340,6 +1340,25 @@ class MLExecuteInput(BaseModel):
     artifact_type: str | None = Field(default=None, description="查询 latest 时的 artifact 类型。")
 
 
+class StatsExecuteInput(BaseModel):
+    action: Literal["describe_numeric", "describe_categorical", "group_summary", "correlation", "t_test", "chi_square", "anova", "latest"] = Field(
+        description="要执行的统计动作。"
+    )
+    columns: list[str] | None = Field(default=None, description="描述统计或相关性分析所需列。")
+    group_by: str | None = Field(default=None, description="分组汇总使用的分组列。")
+    metrics: list[dict[str, Any]] | None = Field(default=None, description="分组汇总的指标定义。")
+    sort_by: str | None = Field(default=None, description="分组汇总的排序列。")
+    ascending: bool = Field(default=False, description="是否升序排序。")
+    top_n: int | None = Field(default=None, description="分组汇总返回前几行。")
+    value_col: str | None = Field(default=None, description="t 检验或 ANOVA 的数值列。")
+    group_col: str | None = Field(default=None, description="t 检验、ANOVA 或卡方检验的分组列。")
+    group_a: Any | None = Field(default=None, description="t 检验组 A 的标签。")
+    group_b: Any | None = Field(default=None, description="t 检验组 B 的标签。")
+    col_a: str | None = Field(default=None, description="卡方检验的列 A。")
+    col_b: str | None = Field(default=None, description="卡方检验的列 B。")
+    artifact_type: str | None = Field(default=None, description="查询 latest 时的 artifact 类型。")
+
+
 def _get_dataset_df() -> pd.DataFrame | None:
     dataset_id = get_current_dataset_id()
     try:
@@ -1557,6 +1576,69 @@ def ml_execute(
             artifact = ml.feature_importance(model_artifact_id=model_artifact_id, top_k=top_k)
         else:
             artifact = ml.latest(artifact_type=artifact_type)
+        return _serialize_tool_payload(artifact)
+    except SafeExecutionError as exc:
+        return f"错误：{exc}"
+
+
+@tool(args_schema=StatsExecuteInput)
+def stats_execute(
+    action: Literal["describe_numeric", "describe_categorical", "group_summary", "correlation", "t_test", "chi_square", "anova", "latest"],
+    columns: list[str] | None = None,
+    group_by: str | None = None,
+    metrics: list[dict[str, Any]] | None = None,
+    sort_by: str | None = None,
+    ascending: bool = False,
+    top_n: int | None = None,
+    value_col: str | None = None,
+    group_col: str | None = None,
+    group_a: Any | None = None,
+    group_b: Any | None = None,
+    col_a: str | None = None,
+    col_b: str | None = None,
+    artifact_type: str | None = None,
+) -> str:
+    """
+    统一的统计分析入口。统计类请求优先使用这个工具，而不是自己写 Python 代码。
+    """
+    df = _get_dataset_df()
+    if df is None:
+        return "错误：当前没有可用数据集。请先上传数据。"
+
+    _, _, stats, _, _ = _build_helper_api(df)
+    try:
+        if action == "describe_numeric":
+            artifact = stats.describe_numeric(columns)
+        elif action == "describe_categorical":
+            artifact = stats.describe_categorical(columns)
+        elif action == "group_summary":
+            if not group_by:
+                return "错误：group_summary 需要提供 group_by。"
+            artifact = stats.group_summary(
+                group_by=group_by,
+                metrics=metrics,
+                sort_by=sort_by,
+                ascending=ascending,
+                top_n=top_n,
+            )
+        elif action == "correlation":
+            if not columns:
+                return "错误：correlation 需要至少提供两列。"
+            artifact = stats.correlation(columns)
+        elif action == "t_test":
+            if not value_col or not group_col or group_a is None or group_b is None:
+                return "错误：t_test 需要提供 value_col、group_col、group_a 和 group_b。"
+            artifact = stats.t_test(value_col, group_col, group_a, group_b)
+        elif action == "chi_square":
+            if not col_a or not col_b:
+                return "错误：chi_square 需要提供 col_a 和 col_b。"
+            artifact = stats.chi_square(col_a, col_b)
+        elif action == "anova":
+            if not value_col or not group_col:
+                return "错误：anova 需要提供 value_col 和 group_col。"
+            artifact = stats.anova(value_col, group_col)
+        else:
+            artifact = stats.latest(artifact_type=artifact_type)
         return _serialize_tool_payload(artifact)
     except SafeExecutionError as exc:
         return f"错误：{exc}"
