@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+backend_path = str(BACKEND_DIR)
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
 
 from src import server, tools
 from src.data_manager import cleanup_dataset_artifacts, dataset_store

@@ -7,7 +7,7 @@ import logging
 import platform
 import sys
 import time
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -1248,6 +1248,15 @@ def set_current_dataset_id(dataset_id: str | None) -> None:
 
 def get_current_dataset_id() -> str | None:
     return CURRENT_DATASET_ID.get()
+
+
+@contextlib.contextmanager
+def bind_current_dataset_id(dataset_id: str | None):
+    token: Token[str | None] = CURRENT_DATASET_ID.set(dataset_id)
+    try:
+        yield dataset_id
+    finally:
+        CURRENT_DATASET_ID.reset(token)
 
 
 def consume_current_image_event() -> dict[str, Any] | None:

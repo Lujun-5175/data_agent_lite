@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import io
 import logging
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 from typing import Any
 from uuid import uuid4
 
@@ -119,6 +119,8 @@ class Dataset:
 class DatasetStore:
     _datasets: dict[str, Dataset] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
+    _preprocess_events: dict[str, Event] = field(default_factory=dict)
+    _preprocess_errors: dict[str, Exception] = field(default_factory=dict)
 
     def create_dataset(
         self,
@@ -187,32 +189,81 @@ class DatasetStore:
             return list(self._datasets.values())
 
     def ensure_preprocessed(self, dataset_id: str) -> Dataset:
-        with self._lock:
-            dataset = self._datasets.get(dataset_id)
-            if dataset is None:
-                raise DatasetNotFoundError("数据集不存在或已被删除。")
-            if dataset.preprocessed:
-                return dataset
+        while True:
+            with self._lock:
+                dataset = self._datasets.get(dataset_id)
+                if dataset is None:
+                    raise DatasetNotFoundError("数据集不存在或已被删除。")
+                if dataset.preprocessed:
+                    return dataset
 
-            analysis_df, preprocess_payload, preprocess_warnings = prepare_analysis_dataframe(
-                dataset.raw_df,
-                dataset.schema_profile_artifact,
-            )
-            preprocess_artifact = build_artifact(
-                artifact_type="preprocess_result",
-                dataset_id=dataset.dataset_id,
-                payload=preprocess_payload,
-                warnings=preprocess_warnings,
-            )
-            artifact_registry.register(dataset.dataset_id, preprocess_artifact)
+                preprocess_event = self._preprocess_events.get(dataset_id)
+                if preprocess_event is None:
+                    preprocess_event = Event()
+                    self._preprocess_events[dataset_id] = preprocess_event
+                    self._preprocess_errors.pop(dataset_id, None)
+                    raw_df = dataset.raw_df
+                    schema_profile_artifact = dataset.schema_profile_artifact
+                    is_owner = True
+                else:
+                    is_owner = False
 
-            dataset.analysis_df = analysis_df
-            dataset.analysis_preprocess_artifact = preprocess_artifact
-            dataset.preview = _build_preview(dataset.working_df)
-            dataset.columns = _build_columns(dataset.working_df)
-            dataset.preprocessing_log = _build_preprocessing_log(preprocess_artifact)
-            dataset.preprocessed = True
-            logger.info("Dataset preprocessing completed", extra={"dataset_id": dataset_id})
+            if not is_owner:
+                preprocess_event.wait()
+                with self._lock:
+                    dataset = self._datasets.get(dataset_id)
+                    if dataset is None:
+                        raise DatasetNotFoundError("数据集不存在或已被删除。")
+                    if dataset.preprocessed:
+                        return dataset
+                    error = self._preprocess_errors.get(dataset_id)
+                if error is not None:
+                    raise error
+                continue
+
+            try:
+                analysis_df, preprocess_payload, preprocess_warnings = prepare_analysis_dataframe(
+                    raw_df,
+                    schema_profile_artifact,
+                )
+                preprocess_artifact = build_artifact(
+                    artifact_type="preprocess_result",
+                    dataset_id=dataset_id,
+                    payload=preprocess_payload,
+                    warnings=preprocess_warnings,
+                )
+            except Exception as exc:
+                with self._lock:
+                    self._preprocess_errors[dataset_id] = exc
+                    done_event = self._preprocess_events.pop(dataset_id, None)
+                if done_event is not None:
+                    done_event.set()
+                raise
+
+            with self._lock:
+                dataset = self._datasets.get(dataset_id)
+                if dataset is None:
+                    self._preprocess_errors.pop(dataset_id, None)
+                    done_event = self._preprocess_events.pop(dataset_id, None)
+                    if done_event is not None:
+                        done_event.set()
+                    raise DatasetNotFoundError("数据集不存在或已被删除。")
+
+                if not dataset.preprocessed:
+                    artifact_registry.register(dataset.dataset_id, preprocess_artifact)
+                    dataset.analysis_df = analysis_df
+                    dataset.analysis_preprocess_artifact = preprocess_artifact
+                    dataset.preview = _build_preview(dataset.working_df)
+                    dataset.columns = _build_columns(dataset.working_df)
+                    dataset.preprocessing_log = _build_preprocessing_log(preprocess_artifact)
+                    dataset.preprocessed = True
+                    logger.info("Dataset preprocessing completed", extra={"dataset_id": dataset_id})
+
+                self._preprocess_errors.pop(dataset_id, None)
+                done_event = self._preprocess_events.pop(dataset_id, None)
+
+            if done_event is not None:
+                done_event.set()
             return dataset
 
     def get_schema_profile(self, dataset_id: str) -> dict[str, Any]:

@@ -21,10 +21,10 @@ from src.routing_rules import (
     interpret_request,
 )
 from src.tools import (
+    bind_current_dataset_id,
     fig_inter,
     ml_execute,
     python_inter,
-    set_current_dataset_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -253,71 +253,70 @@ async def generate_general_chat_reply(messages: list[dict[str, Any]]) -> str:
 @dynamic_prompt
 def dataset_context_middleware(request) -> str:
     dataset_id = _extract_dataset_id(request)
-    set_current_dataset_id(dataset_id)
+    with bind_current_dataset_id(dataset_id):
+        runtime = getattr(request, "runtime", None)
+        latest_user_message = ""
+        if runtime is not None:
+            runtime_input = getattr(runtime, "input", None)
+            if isinstance(runtime_input, dict):
+                raw_messages = runtime_input.get("messages")
+                if isinstance(raw_messages, list):
+                    for msg in reversed(raw_messages):
+                        if isinstance(msg, dict) and msg.get("type") in {"human", "user"}:
+                            content = msg.get("content")
+                            if isinstance(content, str):
+                                latest_user_message = content
+                                break
 
-    runtime = getattr(request, "runtime", None)
-    latest_user_message = ""
-    if runtime is not None:
-        runtime_input = getattr(runtime, "input", None)
-        if isinstance(runtime_input, dict):
-            raw_messages = runtime_input.get("messages")
-            if isinstance(raw_messages, list):
-                for msg in reversed(raw_messages):
-                    if isinstance(msg, dict) and msg.get("type") in {"human", "user"}:
-                        content = msg.get("content")
-                        if isinstance(content, str):
-                            latest_user_message = content
-                            break
+        dataset_columns: list[str] = []
+        if dataset_id:
+            dataset = get_dataset(dataset_id)
+            dataset_columns = [column["name"] for column in dataset.columns if "name" in column]
+            data_context = get_data_info(dataset_id)
+            dataset_scope = f"当前数据集 dataset_id: {dataset_id}，分析基于 {dataset.analysis_basis}。"
+        else:
+            data_context = "当前未选择数据集。普通聊天可以继续进行；如果用户需要分析具体数据，请先上传 CSV 文件。"
+            dataset_scope = "当前没有可用数据集。普通聊天可直接回答，数据分析需先上传 CSV。"
 
-    dataset_columns: list[str] = []
-    if dataset_id:
-        dataset = get_dataset(dataset_id)
-        dataset_columns = [column["name"] for column in dataset.columns if "name" in column]
-        data_context = get_data_info(dataset_id)
-        dataset_scope = f"当前数据集 dataset_id: {dataset_id}，分析基于 {dataset.analysis_basis}。"
-    else:
-        data_context = "当前未选择数据集。普通聊天可以继续进行；如果用户需要分析具体数据，请先上传 CSV 文件。"
-        dataset_scope = "当前没有可用数据集。普通聊天可直接回答，数据分析需先上传 CSV。"
-
-    interpretation = interpret_request(
-        RoutingContext(
-            message=latest_user_message,
+        interpretation = interpret_request(
+            RoutingContext(
+                message=latest_user_message,
+                dataset_columns=dataset_columns,
+                prior_analysis_active=bool(dataset_id),
+            ),
+            use_llm=False,
+        )
+        stats_decision = get_stats_intent_decision(
+            latest_user_message,
             dataset_columns=dataset_columns,
             prior_analysis_active=bool(dataset_id),
-        ),
-        use_llm=False,
-    )
-    stats_decision = get_stats_intent_decision(
-        latest_user_message,
-        dataset_columns=dataset_columns,
-        prior_analysis_active=bool(dataset_id),
-    )
-    logger.debug("stats intent decision: %s", stats_decision.to_dict())
-    logger.debug("request interpretation: %s", interpretation.to_dict())
-    if interpretation.intent_type == "ml":
-        route_hint = (
-            "这是明确建模请求。选择最小必要步骤，"
-            "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
         )
-    elif interpretation.intent_type == "mixed":
-        route_hint = (
-            "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
-            "不要把探索性分析直接升级成建模。"
-        )
-    elif interpretation.intent_type == "chart":
-        route_hint = "这是绘图请求。先做最小必要分析，再使用 `fig_inter` 生成图表。"
-    elif interpretation.intent_type == "followup":
-        route_hint = "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
-    elif stats_decision.matched:
-        route_hint = f"检测到统计意图（stats score={stats_decision.score:.2f}），优先使用 stats.* helper。"
-    else:
-        route_hint = (
-            "先根据 interpretation 选择最小必要工具。"
-            "统计问题优先 stats.*，探索性分析优先 python_inter 或 stats.*，"
-            "明确建模请求才使用 `ml_execute`，绘图需求使用 `fig_inter`。"
-        )
+        logger.debug("stats intent decision: %s", stats_decision.to_dict())
+        logger.debug("request interpretation: %s", interpretation.to_dict())
+        if interpretation.intent_type == "ml":
+            route_hint = (
+                "这是明确建模请求。选择最小必要步骤，"
+                "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
+            )
+        elif interpretation.intent_type == "mixed":
+            route_hint = (
+                "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
+                "不要把探索性分析直接升级成建模。"
+            )
+        elif interpretation.intent_type == "chart":
+            route_hint = "这是绘图请求。先做最小必要分析，再使用 `fig_inter` 生成图表。"
+        elif interpretation.intent_type == "followup":
+            route_hint = "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
+        elif stats_decision.matched:
+            route_hint = f"检测到统计意图（stats score={stats_decision.score:.2f}），优先使用 stats.* helper。"
+        else:
+            route_hint = (
+                "先根据 interpretation 选择最小必要工具。"
+                "统计问题优先 stats.*，探索性分析优先 python_inter 或 stats.*，"
+                "明确建模请求才使用 `ml_execute`，绘图需求使用 `fig_inter`。"
+            )
 
-    return f"""你是 Data Agent 的高级数据分析助手。你的首要目标是：结果正确、过程可复核、表达清晰。
+        return f"""你是 Data Agent 的高级数据分析助手。你的首要目标是：结果正确、过程可复核、表达清晰。
 
 【当前数据集状态】
 {dataset_scope}
