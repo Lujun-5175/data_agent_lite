@@ -30,6 +30,8 @@ from src.tools import (
 logger = logging.getLogger(__name__)
 load_dotenv(override=True)
 
+DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+
 
 class AgentContext(BaseModel):
     dataset_id: str | None = Field(default=None, description="当前分析的数据集 ID")
@@ -96,7 +98,7 @@ def _extract_dataset_id(request) -> str | None:
 
 
 model = ChatDeepSeek(
-    model="deepseek-chat",
+    model=DEFAULT_DEEPSEEK_MODEL,
     temperature=0,
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     api_base="https://api.deepseek.com",

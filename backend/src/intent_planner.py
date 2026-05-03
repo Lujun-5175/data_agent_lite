@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, ValidationError
 logger = logging.getLogger(__name__)
 
 INTENT_PLANNER_MODEL: Any | None = None
+DEFAULT_INTENT_PLANNER_MODEL = os.getenv("INTENT_PLANNER_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"))
 
 
 class IntentInterpretationPayload(BaseModel):
@@ -47,7 +48,7 @@ def _build_model() -> Any | None:
     if not api_key:
         return None
     return ChatDeepSeek(
-        model=os.getenv("INTENT_PLANNER_MODEL", "deepseek-chat"),
+        model=DEFAULT_INTENT_PLANNER_MODEL,
         temperature=0,
         api_key=api_key,
         api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
