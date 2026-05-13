@@ -54,6 +54,7 @@ export function extractImageUrl(payload: Record<string, unknown>) {
 export function buildMessageHistory(messages: ChatMessage[]) {
   return messages
     .filter((message) => message.kind === 'text' && message.content.trim() !== '')
+    .slice(-12)
     .map((message) => ({
       type: message.type === 'user' ? 'human' : 'ai',
       content: message.content,

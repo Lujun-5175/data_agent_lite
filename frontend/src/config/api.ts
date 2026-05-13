@@ -28,6 +28,7 @@ export type ApiErrorPayload = {
     code?: string;
     message?: string;
   };
+  request_id?: string;
   message?: string;
   detail?: string;
 };
@@ -37,9 +38,10 @@ export async function readApiErrorInfo(response: Response, fallbackMessage: stri
     const payload = (await response.json()) as ApiErrorPayload;
     const code = payload?.error?.code;
     const message = payload?.error?.message || payload?.message || payload?.detail || fallbackMessage;
-    return { code, message };
+    const requestId = payload?.request_id ?? response.headers.get('X-Request-ID') ?? undefined;
+    return { code, message, requestId };
   } catch {
-    return { code: undefined, message: fallbackMessage };
+    return { code: undefined, message: fallbackMessage, requestId: response.headers.get('X-Request-ID') ?? undefined };
   }
 }
 
@@ -57,6 +59,18 @@ export function getFriendlyErrorMessage(code: string | undefined, fallbackMessag
       return '分析代码被安全策略拦截，请调整后重试。';
     case 'structured_failure':
       return '本次请求没有产出可复核的结构化结果，请检查字段、目标列或图表描述后重试。';
+    case 'agent_recursion_limit':
+      return '任务过于复杂或执行路径反复，系统已主动停止。请把问题拆得更具体一些再试。';
+    case 'upstream_model_stream_error':
+      return '上游模型流式响应中断，系统已尝试恢复。请稍后重试。';
+    case 'upstream_model_timeout':
+      return '上游模型响应超时，请稍后重试。';
+    case 'tool_execution_timeout':
+      return '分析执行超时，请缩小范围、指定列或先做更小的分组分析。';
+    case 'history_compression_error':
+      return '当前会话上下文整理失败，请重新发起一次请求。';
+    case 'stream_interrupted':
+      return '响应流已中断，请稍后重试。';
     case 'correlation_unsupported':
       return '当前版本暂不支持该类型相关性分析。';
     case 'internal_error':

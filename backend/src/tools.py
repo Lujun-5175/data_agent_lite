@@ -24,6 +24,7 @@ from scipy import stats as scipy_stats
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
+from src.audit_log import get_audit_logger
 from src.data_manager import (
     DatasetLoadError,
     DatasetNotFoundError,
@@ -158,7 +159,41 @@ class SafeExecutionError(AppError):
         super().__init__("invalid_python_code", message, 400)
 
 
+class ToolExecutionTimeoutError(SafeExecutionError):
+    """Raised when constrained execution exceeds its adaptive timeout budget."""
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(f"代码执行超时（>{seconds:.1f} 秒），请缩小范围、指定列或减少循环。")
+        self.code = "tool_execution_timeout"
+
+
 class SafeCodeValidator(ast.NodeVisitor):
+    def __init__(
+        self,
+        *,
+        max_ast_nodes: int | None = None,
+        max_loop_nesting: int | None = None,
+        max_comprehension_nesting: int | None = None,
+        max_call_chain_depth: int | None = None,
+    ) -> None:
+        self.max_ast_nodes = SETTINGS.safe_exec_max_ast_nodes if max_ast_nodes is None else max_ast_nodes
+        self.max_loop_nesting = SETTINGS.safe_exec_max_loop_nesting if max_loop_nesting is None else max_loop_nesting
+        self.max_comprehension_nesting = (
+            SETTINGS.safe_exec_max_comprehension_nesting
+            if max_comprehension_nesting is None
+            else max_comprehension_nesting
+        )
+        self.max_call_chain_depth = SETTINGS.safe_exec_max_call_chain_depth if max_call_chain_depth is None else max_call_chain_depth
+        self._ast_node_count = 0
+        self._loop_nesting = 0
+        self._comprehension_nesting = 0
+
+    def visit(self, node: ast.AST) -> Any:
+        self._ast_node_count += 1
+        if self._ast_node_count > self.max_ast_nodes:
+            raise SafeExecutionError("代码过于复杂：AST 节点数超过限制。")
+        return super().visit(node)
+
     def visit_Import(self, node: ast.Import) -> Any:
         raise SafeExecutionError("不允许在执行代码中使用 import。")
 
@@ -173,6 +208,7 @@ class SafeCodeValidator(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> Any:
+        self._check_call_chain_depth(node)
         if node.attr.startswith("_"):
             raise SafeExecutionError(f"不允许访问敏感属性: {node.attr}")
         if node.attr in FORBIDDEN_METHOD_NAMES:
@@ -180,10 +216,32 @@ class SafeCodeValidator(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
+        self._check_call_chain_depth(node)
         call_name = self._resolve_call_name(node.func)
         if call_name in FORBIDDEN_CALL_NAMES or call_name in FORBIDDEN_METHOD_NAMES:
             raise SafeExecutionError(f"不允许调用危险函数: {call_name}")
         self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> Any:
+        self._visit_loop_node(node)
+
+    def visit_While(self, node: ast.While) -> Any:
+        self._visit_loop_node(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> Any:
+        self._visit_loop_node(node)
+
+    def visit_ListComp(self, node: ast.ListComp) -> Any:
+        self._visit_comprehension_node(node)
+
+    def visit_SetComp(self, node: ast.SetComp) -> Any:
+        self._visit_comprehension_node(node)
+
+    def visit_DictComp(self, node: ast.DictComp) -> Any:
+        self._visit_comprehension_node(node)
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
+        self._visit_comprehension_node(node)
 
     def _resolve_call_name(self, node: ast.AST) -> str | None:
         if isinstance(node, ast.Name):
@@ -191,6 +249,35 @@ class SafeCodeValidator(ast.NodeVisitor):
         if isinstance(node, ast.Attribute):
             return node.attr
         return None
+
+    def _visit_loop_node(self, node: ast.AST) -> Any:
+        self._loop_nesting += 1
+        try:
+            if self._loop_nesting > self.max_loop_nesting:
+                raise SafeExecutionError("代码过于复杂：循环嵌套层数超过限制。")
+            self.generic_visit(node)
+        finally:
+            self._loop_nesting -= 1
+
+    def _visit_comprehension_node(self, node: ast.AST) -> Any:
+        self._comprehension_nesting += 1
+        try:
+            if self._comprehension_nesting > self.max_comprehension_nesting:
+                raise SafeExecutionError("代码过于复杂：推导式嵌套层数超过限制。")
+            self.generic_visit(node)
+        finally:
+            self._comprehension_nesting -= 1
+
+    def _check_call_chain_depth(self, node: ast.AST) -> None:
+        if self._measure_chain_depth(node) > self.max_call_chain_depth:
+            raise SafeExecutionError("代码过于复杂：调用链过长。")
+
+    def _measure_chain_depth(self, node: ast.AST) -> int:
+        if isinstance(node, ast.Call):
+            return 1 + self._measure_chain_depth(node.func)
+        if isinstance(node, ast.Attribute):
+            return 1 + self._measure_chain_depth(node.value)
+        return 0
 
 
 class DataHelperAPI:
@@ -953,19 +1040,18 @@ class StatsHelperAPI:
 class SafePythonExecutor:
     # This is a constrained execution layer, not an OS-level sandbox.
     # Keep the policy strict and prefer helper APIs over broad Python objects.
-    EXECUTION_TIMEOUT_SECONDS = 3.0
-
     def __init__(self, *, image_dir: Path):
         self.image_dir = image_dir
 
-    def safe_execute_python(self, py_code: str, env: dict[str, Any]) -> str:
+    def safe_execute_python(self, py_code: str, env: dict[str, Any], *, df: pd.DataFrame | None = None) -> str:
         compiled = self._validate_and_compile(py_code)
         output = []
         execution_env = self._build_env(env)
+        timeout_seconds = self._resolve_timeout_seconds(df=df, mode="python")
 
         try:
             with contextlib.redirect_stdout(_StdoutCollector(output)):
-                with _execution_timeout(self.EXECUTION_TIMEOUT_SECONDS):
+                with _execution_timeout(timeout_seconds):
                     exec(compiled, execution_env, execution_env)
         except SafeExecutionError:
             raise
@@ -978,14 +1064,22 @@ class SafePythonExecutor:
             return printed
         return "代码执行成功，但没有输出。请使用 print() 展示结果。"
 
-    def safe_execute_plot(self, py_code: str, env: dict[str, Any], figure_name: str | None = None) -> str:
+    def safe_execute_plot(
+        self,
+        py_code: str,
+        env: dict[str, Any],
+        figure_name: str | None = None,
+        *,
+        df: pd.DataFrame | None = None,
+    ) -> str:
         compiled = self._validate_and_compile(py_code)
         execution_env = self._build_env(env)
+        timeout_seconds = self._resolve_timeout_seconds(df=df, mode="plot")
 
         plt.close("all")
 
         try:
-            with _execution_timeout(self.EXECUTION_TIMEOUT_SECONDS):
+            with _execution_timeout(timeout_seconds):
                 exec(compiled, execution_env, execution_env)
         except SafeExecutionError:
             raise
@@ -1036,6 +1130,18 @@ class SafePythonExecutor:
         safe_env = {"__builtins__": ALLOWED_BUILTINS.copy()}
         safe_env.update(env)
         return safe_env
+
+    def _resolve_timeout_seconds(self, *, df: pd.DataFrame | None, mode: Literal["python", "plot"]) -> float:
+        row_count = 0 if df is None else int(len(df.index))
+        column_count = 0 if df is None else int(len(df.columns))
+        complexity_bonus = min(4.0, row_count / 4000.0 + column_count / 25.0)
+        if mode == "plot":
+            base = SETTINGS.plot_execution_timeout_base_seconds
+            ceiling = SETTINGS.plot_execution_timeout_max_seconds
+        else:
+            base = SETTINGS.python_execution_timeout_base_seconds
+            ceiling = SETTINGS.python_execution_timeout_max_seconds
+        return min(ceiling, base + complexity_bonus)
 
 
 class ReadOnlyDataFrameProxy:
@@ -1232,7 +1338,7 @@ def _execution_timeout(seconds: float):
 
     def _trace(frame: Any, event: str, arg: Any):  # pragma: no cover - runtime guard
         if event == "line" and time.monotonic() > deadline:
-            raise SafeExecutionError(f"代码执行超时（>{seconds:.1f} 秒），请缩短循环或简化计算。")
+            raise ToolExecutionTimeoutError(seconds)
         return _trace
 
     sys.settrace(_trace)
@@ -1385,29 +1491,150 @@ def _serialize_tool_payload(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _serialize_tool_error(
+    *,
+    error_code: str,
+    message: str,
+    tool_name: str,
+    retryable: bool = False,
+    stage: str = "tool_execution",
+) -> str:
+    return _serialize_tool_payload(
+        {
+            "artifact_type": "tool_error",
+            "error_code": error_code,
+            "message": message,
+            "retryable": retryable,
+            "stage": stage,
+            "tool_name": tool_name,
+        }
+    )
+
+
+def _audit_tool_args(**kwargs: Any) -> dict[str, Any]:
+    return {key: value for key, value in kwargs.items() if value is not None}
+
+
+def _output_size_bytes(result: str | None) -> int:
+    if result is None:
+        return 0
+    return len(result.encode("utf-8"))
+
+
+def _record_tool_audit(
+    *,
+    tool_name: str,
+    dataset_id: str | None,
+    tool_args: dict[str, Any] | None,
+    code: str | None,
+    execution_status: Literal["success", "error", "timeout", "blocked"],
+    start: float,
+    result: str | None = None,
+    error_message: str | None = None,
+    blocked_reason: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    try:
+        get_audit_logger().record(
+            tool_name=tool_name,
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=code,
+            execution_status=execution_status,
+            latency_ms=(time.perf_counter() - start) * 1000,
+            output_size_bytes=_output_size_bytes(result),
+            error_message=error_message,
+            blocked_reason=blocked_reason,
+            extra=extra,
+        )
+    except Exception:
+        logger.warning("Audit logging failed for tool %s", tool_name, exc_info=True)
+
+
 @tool(args_schema=PythonCodeInput)
 def python_inter(py_code: str) -> str:
     """
     安全执行受限的数据分析代码，仅暴露白名单 helper API。
     """
+    start = time.perf_counter()
+    dataset_id = get_current_dataset_id()
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
-
-    data, viz, stats, profile, ml = _build_helper_api(df)
-    env = {
-        "df": ReadOnlyDataFrameProxy(df),
-        "data": data,
-        "viz": viz,
-        "stats": stats,
-        "profile": profile,
-        "ml": ml,
-    }
+        result = "错误：当前没有可用数据集。请先上传数据。"
+        _record_tool_audit(
+            tool_name="python_inter",
+            dataset_id=dataset_id,
+            tool_args={},
+            code=py_code,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
 
     try:
-        return EXECUTOR.safe_execute_python(py_code, env)
+        data, viz, stats, profile, ml = _build_helper_api(df)
+        env = {
+            "df": ReadOnlyDataFrameProxy(df),
+            "data": data,
+            "viz": viz,
+            "stats": stats,
+            "profile": profile,
+            "ml": ml,
+        }
+        result = EXECUTOR.safe_execute_python(py_code, env, df=df)
+        _record_tool_audit(
+            tool_name="python_inter",
+            dataset_id=dataset_id,
+            tool_args={},
+            code=py_code,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
+    except ToolExecutionTimeoutError as exc:
+        result = _serialize_tool_error(
+            error_code=exc.code,
+            message=exc.message,
+            tool_name="python_inter",
+        )
+        _record_tool_audit(
+            tool_name="python_inter",
+            dataset_id=dataset_id,
+            tool_args={},
+            code=py_code,
+            execution_status="timeout",
+            start=start,
+            result=result,
+            error_message=exc.message,
+        )
+        return result
     except SafeExecutionError as exc:
-        return f"代码被安全策略拦截: {exc}"
+        result = f"代码被安全策略拦截: {exc}"
+        _record_tool_audit(
+            tool_name="python_inter",
+            dataset_id=dataset_id,
+            tool_args={},
+            code=py_code,
+            execution_status="blocked",
+            start=start,
+            result=result,
+            error_message=str(exc),
+            blocked_reason=str(exc),
+        )
+        return result
+    except Exception as exc:
+        _record_tool_audit(
+            tool_name="python_inter",
+            dataset_id=dataset_id,
+            tool_args={},
+            code=py_code,
+            execution_status="error",
+            start=start,
+            error_message=str(exc),
+        )
+        raise
 
 
 @tool(args_schema=FigCodeInput)
@@ -1415,25 +1642,87 @@ def fig_inter(py_code: str, fname: str) -> str:
     """
     安全执行绘图代码并保存生成的图片。
     """
+    start = time.perf_counter()
+    dataset_id = get_current_dataset_id()
+    tool_args = _audit_tool_args(fname=fname)
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
-
-    data, viz, stats, profile, ml = _build_helper_api(df)
-    env = {
-        "df": ReadOnlyDataFrameProxy(df),
-        "data": data,
-        "viz": viz,
-        "stats": stats,
-        "profile": profile,
-        "ml": ml,
-    }
+        result = "错误：当前没有可用数据集。请先上传数据。"
+        _record_tool_audit(
+            tool_name="fig_inter",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=py_code,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
 
     try:
+        data, viz, stats, profile, ml = _build_helper_api(df)
+        env = {
+            "df": ReadOnlyDataFrameProxy(df),
+            "data": data,
+            "viz": viz,
+            "stats": stats,
+            "profile": profile,
+            "ml": ml,
+        }
         set_current_image_event(None)
-        return EXECUTOR.safe_execute_plot(py_code, env, fname)
+        result = EXECUTOR.safe_execute_plot(py_code, env, fname, df=df)
+        _record_tool_audit(
+            tool_name="fig_inter",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=py_code,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
+    except ToolExecutionTimeoutError as exc:
+        result = _serialize_tool_error(
+            error_code=exc.code,
+            message=exc.message,
+            tool_name="fig_inter",
+        )
+        _record_tool_audit(
+            tool_name="fig_inter",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=py_code,
+            execution_status="timeout",
+            start=start,
+            result=result,
+            error_message=exc.message,
+        )
+        return result
     except SafeExecutionError as exc:
-        return f"绘图代码被安全策略拦截: {exc}"
+        result = f"绘图代码被安全策略拦截: {exc}"
+        _record_tool_audit(
+            tool_name="fig_inter",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=py_code,
+            execution_status="blocked",
+            start=start,
+            result=result,
+            error_message=str(exc),
+            blocked_reason=str(exc),
+        )
+        return result
+    except Exception as exc:
+        _record_tool_audit(
+            tool_name="fig_inter",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=py_code,
+            execution_status="error",
+            start=start,
+            error_message=str(exc),
+        )
+        raise
     finally:
         plt.close("all")
 
@@ -1548,15 +1837,48 @@ def ml_execute(
     - action="feature_importance": 返回特征重要性
     - action="latest": 返回最近一次 ML 结构化结果
     """
+    start = time.perf_counter()
+    dataset_id = get_current_dataset_id()
+    tool_args = _audit_tool_args(
+        action=action,
+        model_type=model_type,
+        target=target,
+        features=features,
+        test_size=test_size,
+        positive_label=positive_label,
+        model_artifact_id=model_artifact_id,
+        top_k=top_k,
+        artifact_type=artifact_type,
+    )
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        result = "错误：当前没有可用数据集。请先上传数据。"
+        _record_tool_audit(
+            tool_name="ml_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
 
-    _, _, _, _, ml = _build_helper_api(df)
     try:
+        _, _, _, _, ml = _build_helper_api(df)
         if action == "train":
             if not target:
-                return "错误：训练动作必须提供 target。"
+                result = "错误：训练动作必须提供 target。"
+                _record_tool_audit(
+                    tool_name="ml_execute",
+                    dataset_id=dataset_id,
+                    tool_args=tool_args,
+                    code=None,
+                    execution_status="success",
+                    start=start,
+                    result=result,
+                )
+                return result
             if model_type == "linear_regression":
                 artifact = ml.linear_regression_fit(
                     target=target,
@@ -1576,9 +1898,41 @@ def ml_execute(
             artifact = ml.feature_importance(model_artifact_id=model_artifact_id, top_k=top_k)
         else:
             artifact = ml.latest(artifact_type=artifact_type)
-        return _serialize_tool_payload(artifact)
+        result = _serialize_tool_payload(artifact)
+        _record_tool_audit(
+            tool_name="ml_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
     except SafeExecutionError as exc:
-        return f"错误：{exc}"
+        result = f"错误：{exc}"
+        _record_tool_audit(
+            tool_name="ml_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="error",
+            start=start,
+            result=result,
+            error_message=str(exc),
+        )
+        return result
+    except Exception as exc:
+        _record_tool_audit(
+            tool_name="ml_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="error",
+            start=start,
+            error_message=str(exc),
+        )
+        raise
 
 
 @tool(args_schema=StatsExecuteInput)
@@ -1601,19 +1955,57 @@ def stats_execute(
     """
     统一的统计分析入口。统计类请求优先使用这个工具，而不是自己写 Python 代码。
     """
+    start = time.perf_counter()
+    dataset_id = get_current_dataset_id()
+    tool_args = _audit_tool_args(
+        action=action,
+        columns=columns,
+        group_by=group_by,
+        metrics=metrics,
+        sort_by=sort_by,
+        ascending=ascending,
+        top_n=top_n,
+        value_col=value_col,
+        group_col=group_col,
+        group_a=group_a,
+        group_b=group_b,
+        col_a=col_a,
+        col_b=col_b,
+        artifact_type=artifact_type,
+    )
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        result = "错误：当前没有可用数据集。请先上传数据。"
+        _record_tool_audit(
+            tool_name="stats_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
 
-    _, _, stats, _, _ = _build_helper_api(df)
     try:
+        _, _, stats, _, _ = _build_helper_api(df)
         if action == "describe_numeric":
             artifact = stats.describe_numeric(columns)
         elif action == "describe_categorical":
             artifact = stats.describe_categorical(columns)
         elif action == "group_summary":
             if not group_by:
-                return "错误：group_summary 需要提供 group_by。"
+                result = "错误：group_summary 需要提供 group_by。"
+                _record_tool_audit(
+                    tool_name="stats_execute",
+                    dataset_id=dataset_id,
+                    tool_args=tool_args,
+                    code=None,
+                    execution_status="success",
+                    start=start,
+                    result=result,
+                )
+                return result
             artifact = stats.group_summary(
                 group_by=group_by,
                 metrics=metrics,
@@ -1623,22 +2015,94 @@ def stats_execute(
             )
         elif action == "correlation":
             if not columns:
-                return "错误：correlation 需要至少提供两列。"
+                result = "错误：correlation 需要至少提供两列。"
+                _record_tool_audit(
+                    tool_name="stats_execute",
+                    dataset_id=dataset_id,
+                    tool_args=tool_args,
+                    code=None,
+                    execution_status="success",
+                    start=start,
+                    result=result,
+                )
+                return result
             artifact = stats.correlation(columns)
         elif action == "t_test":
             if not value_col or not group_col or group_a is None or group_b is None:
-                return "错误：t_test 需要提供 value_col、group_col、group_a 和 group_b。"
+                result = "错误：t_test 需要提供 value_col、group_col、group_a 和 group_b。"
+                _record_tool_audit(
+                    tool_name="stats_execute",
+                    dataset_id=dataset_id,
+                    tool_args=tool_args,
+                    code=None,
+                    execution_status="success",
+                    start=start,
+                    result=result,
+                )
+                return result
             artifact = stats.t_test(value_col, group_col, group_a, group_b)
         elif action == "chi_square":
             if not col_a or not col_b:
-                return "错误：chi_square 需要提供 col_a 和 col_b。"
+                result = "错误：chi_square 需要提供 col_a 和 col_b。"
+                _record_tool_audit(
+                    tool_name="stats_execute",
+                    dataset_id=dataset_id,
+                    tool_args=tool_args,
+                    code=None,
+                    execution_status="success",
+                    start=start,
+                    result=result,
+                )
+                return result
             artifact = stats.chi_square(col_a, col_b)
         elif action == "anova":
             if not value_col or not group_col:
-                return "错误：anova 需要提供 value_col 和 group_col。"
+                result = "错误：anova 需要提供 value_col 和 group_col。"
+                _record_tool_audit(
+                    tool_name="stats_execute",
+                    dataset_id=dataset_id,
+                    tool_args=tool_args,
+                    code=None,
+                    execution_status="success",
+                    start=start,
+                    result=result,
+                )
+                return result
             artifact = stats.anova(value_col, group_col)
         else:
             artifact = stats.latest(artifact_type=artifact_type)
-        return _serialize_tool_payload(artifact)
+        result = _serialize_tool_payload(artifact)
+        _record_tool_audit(
+            tool_name="stats_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="success",
+            start=start,
+            result=result,
+        )
+        return result
     except SafeExecutionError as exc:
-        return f"错误：{exc}"
+        result = f"错误：{exc}"
+        _record_tool_audit(
+            tool_name="stats_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="error",
+            start=start,
+            result=result,
+            error_message=str(exc),
+        )
+        return result
+    except Exception as exc:
+        _record_tool_audit(
+            tool_name="stats_execute",
+            dataset_id=dataset_id,
+            tool_args=tool_args,
+            code=None,
+            execution_status="error",
+            start=start,
+            error_message=str(exc),
+        )
+        raise

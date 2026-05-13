@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from src.agent import graph
 from src.api_models import CorrelationRequest
 from src.app_lifecycle import build_artifact_cleanup_lifespan
+from src.audit_log import read_recent_records
 from src.chat_service import create_chat_stream_response
 from src.data_manager import (
     DatasetLoadError,
@@ -31,6 +32,7 @@ from src.data_manager import (
 )
 from src.errors import AppError
 from src.request_parsing import error_response, extract_dataset_id_for_request_path
+from src.request_context import bind_request_context, create_request_id, get_request_id, set_failure_stage
 from src.settings import SETTINGS
 from src.tools import bind_current_dataset_id
 
@@ -113,26 +115,31 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.exception_handler(DatasetNotFoundError)
 async def handle_dataset_not_found(request: Request, exc: DatasetNotFoundError) -> JSONResponse:
+    set_failure_stage(exc.stage or "http")
     return error_response(exc.status_code, exc.code, exc.message)
 
 
 @app.exception_handler(DatasetLoadError)
 async def handle_dataset_load_error(request: Request, exc: DatasetLoadError) -> JSONResponse:
+    set_failure_stage(exc.stage or "http")
     return error_response(exc.status_code, exc.code, exc.message)
 
 
 @app.exception_handler(AppError)
 async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+    set_failure_stage(exc.stage or "http")
     return error_response(exc.status_code, exc.code, exc.message)
 
 
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    set_failure_stage("validation")
     return error_response(422, "validation_error", "请求参数不合法，请检查后重试。")
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    set_failure_stage("http")
     logger.exception("Unhandled server exception")
     return error_response(500, "internal_error", "服务器内部错误，请稍后重试。")
 
@@ -163,6 +170,11 @@ async def data_preview(dataset_id: str) -> dict[str, object]:
         "analysis_preprocess": dataset.analysis_preprocess_artifact,
         "model_prep_plan": dataset.model_prep_plan_artifact,
     }
+
+
+@app.get("/api/audit/runs")
+async def audit_runs(limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, object]:
+    return {"runs": read_recent_records(limit=limit), "limit": limit}
 
 
 @app.post("/upload")
@@ -267,42 +279,46 @@ if IS_DEVELOPMENT:
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
+    request_id = create_request_id()
     dataset_id: str | None = None
     body = b""
     should_rebuild = request.headers.get("content-type", "").startswith("application/json")
 
-    if should_rebuild:
-        body = await request.body()
-        if body:
-            try:
-                payload = json.loads(body)
-                if isinstance(payload, dict):
-                    dataset_id = extract_dataset_id_for_request_path(request.url.path, payload)
-            except Exception:
-                dataset_id = None
+    with bind_request_context(request_id):
+        if should_rebuild:
+            body = await request.body()
+            if body:
+                try:
+                    payload = json.loads(body)
+                    if isinstance(payload, dict):
+                        dataset_id = extract_dataset_id_for_request_path(request.url.path, payload)
+                except Exception:
+                    dataset_id = None
 
-        async def receive() -> dict[str, object]:
-            return {"type": "http.request", "body": body, "more_body": False}
+            async def receive() -> dict[str, object]:
+                return {"type": "http.request", "body": body, "more_body": False}
 
-        request = Request(request.scope, receive)
+            request = Request(request.scope, receive)
 
-    if request.url.path.startswith("/agent"):
-        with bind_current_dataset_id(dataset_id):
+        if request.url.path.startswith("/agent"):
+            with bind_current_dataset_id(dataset_id):
+                response = await call_next(request)
+            response = _bind_agent_response_iterator(response, dataset_id)
+        else:
             response = await call_next(request)
-        response = _bind_agent_response_iterator(response, dataset_id)
-    else:
-        response = await call_next(request)
 
-    error_code = response.headers.get("X-Error-Code")
-    logger.info(
-        "%s %s status=%s dataset_id=%s error_code=%s",
-        request.method,
-        request.url.path,
-        response.status_code,
-        dataset_id,
-        error_code,
-    )
-    return response
+        response.headers["X-Request-ID"] = get_request_id() or request_id
+        error_code = response.headers.get("X-Error-Code")
+        logger.info(
+            "%s %s status=%s request_id=%s dataset_id=%s error_code=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            request_id,
+            dataset_id,
+            error_code,
+        )
+        return response
 
 
 def _bind_agent_response_iterator(response, dataset_id: str | None):

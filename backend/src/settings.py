@@ -14,8 +14,25 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class AppSettings:
+    chat_history_keep_recent_messages: int = _get_int("CHAT_HISTORY_KEEP_RECENT_MESSAGES", 6)
+    chat_history_summary_max_chars: int = _get_int("CHAT_HISTORY_SUMMARY_MAX_CHARS", 240)
+    chat_max_dataset_column_samples: int = _get_int("CHAT_MAX_DATASET_COLUMN_SAMPLES", 8)
+    chat_max_prompt_numeric_columns: int = _get_int("CHAT_MAX_PROMPT_NUMERIC_COLUMNS", 6)
+    chat_max_prompt_categorical_columns: int = _get_int("CHAT_MAX_PROMPT_CATEGORICAL_COLUMNS", 6)
+    agent_max_total_steps: int = _get_int("AGENT_MAX_TOTAL_STEPS", 12)
+    agent_max_same_tool_steps: int = _get_int("AGENT_MAX_SAME_TOOL_STEPS", 3)
+    agent_max_no_progress_steps: int = _get_int("AGENT_MAX_NO_PROGRESS_STEPS", 3)
+    agent_simple_mode_recursion_limit: int = _get_int("AGENT_SIMPLE_MODE_RECURSION_LIMIT", 6)
+    agent_default_recursion_limit: int = _get_int("AGENT_DEFAULT_RECURSION_LIMIT", 12)
     preview_row_count: int = _get_int("PREVIEW_ROW_COUNT", 10)
     artifact_ttl_seconds: int = _get_int("ARTIFACT_TTL_SECONDS", 24 * 60 * 60)
     max_upload_size_bytes: int = _get_int("MAX_UPLOAD_SIZE_BYTES", 50 * 1024 * 1024)
@@ -44,6 +61,17 @@ class AppSettings:
     ml_random_state: int = _get_int("ML_RANDOM_STATE", 42)
     ml_max_importance_items: int = _get_int("ML_MAX_IMPORTANCE_ITEMS", 20)
     ml_max_ohe_categories: int = _get_int("ML_MAX_OHE_CATEGORIES", 30)
+    python_execution_timeout_base_seconds: float = float(os.getenv("PYTHON_EXECUTION_TIMEOUT_BASE_SECONDS", "4.0"))
+    python_execution_timeout_max_seconds: float = float(os.getenv("PYTHON_EXECUTION_TIMEOUT_MAX_SECONDS", "9.0"))
+    plot_execution_timeout_base_seconds: float = float(os.getenv("PLOT_EXECUTION_TIMEOUT_BASE_SECONDS", "6.0"))
+    plot_execution_timeout_max_seconds: float = float(os.getenv("PLOT_EXECUTION_TIMEOUT_MAX_SECONDS", "12.0"))
+    safe_exec_max_ast_nodes: int = _get_int("SAFE_EXEC_MAX_AST_NODES", 1500)
+    safe_exec_max_loop_nesting: int = _get_int("SAFE_EXEC_MAX_LOOP_NESTING", 3)
+    safe_exec_max_comprehension_nesting: int = _get_int("SAFE_EXEC_MAX_COMPREHENSION_NESTING", 3)
+    safe_exec_max_call_chain_depth: int = _get_int("SAFE_EXEC_MAX_CALL_CHAIN_DEPTH", 8)
+    audit_log_enabled: bool = _get_bool("AUDIT_LOG_ENABLED", True)
+    audit_log_path: str = os.getenv("AUDIT_LOG_PATH", "backend/audit_logs/audit.jsonl")
+    audit_log_max_code_chars: int = _get_int("AUDIT_LOG_MAX_CODE_CHARS", 200)
     routing_dataset_required_threshold: float = float(os.getenv("ROUTING_DATASET_REQUIRED_THRESHOLD", "3.0"))
     routing_stats_intent_threshold: float = float(os.getenv("ROUTING_STATS_INTENT_THRESHOLD", "2.8"))
     routing_ml_intent_threshold: float = float(os.getenv("ROUTING_ML_INTENT_THRESHOLD", "2.8"))

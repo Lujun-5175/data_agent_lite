@@ -37,6 +37,7 @@ describe('api config', () => {
   it('maps known backend error codes', async () => {
     const { getFriendlyErrorMessage } = await import('./api');
     expect(getFriendlyErrorMessage('file_too_large', 'fallback')).toContain('50MB');
+    expect(getFriendlyErrorMessage('agent_recursion_limit', 'fallback')).toContain('拆得更具体');
     expect(getFriendlyErrorMessage(undefined, 'fallback')).toBe('fallback');
   });
 });

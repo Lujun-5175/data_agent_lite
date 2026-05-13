@@ -98,7 +98,10 @@ export function useChatStream({
         return;
       }
       if (!response.ok) {
-        const { code, message } = await readApiErrorInfo(response, '调用AI助手失败');
+        const { code, message, requestId } = await readApiErrorInfo(response, '调用AI助手失败');
+        if (requestId) {
+          console.error('chat request failed', { code, requestId });
+        }
         throw new Error(getFriendlyErrorMessage(code, message));
       }
 
@@ -165,6 +168,14 @@ export function useChatStream({
             }
 
             if (event.eventType === 'error') {
+              if (isNonEmptyString(event.payload.request_id) || isNonEmptyString(event.payload.code)) {
+                console.error('chat stream error', {
+                  code: isNonEmptyString(event.payload.code) ? event.payload.code : undefined,
+                  requestId: isNonEmptyString(event.payload.request_id) ? event.payload.request_id : undefined,
+                  stage: isNonEmptyString(event.payload.stage) ? event.payload.stage : undefined,
+                  retryable: typeof event.payload.retryable === 'boolean' ? event.payload.retryable : undefined,
+                });
+              }
               const errorMessage = getFriendlyErrorMessage(
                 isNonEmptyString(event.payload.code) ? event.payload.code : undefined,
                 isNonEmptyString(event.payload.message) ? event.payload.message : '调用AI助手失败'

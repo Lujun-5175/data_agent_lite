@@ -407,6 +407,31 @@ def get_data_info(dataset_id: str) -> str:
     )
 
 
+def get_data_context_summary(dataset_id: str) -> dict[str, Any]:
+    dataset = dataset_store.ensure_preprocessed(dataset_id)
+    numeric_columns = [column["name"] for column in dataset.columns if column.get("type") == "numerical"]
+    categorical_columns = [column["name"] for column in dataset.columns if column.get("type") != "numerical"]
+    schema_warnings = dataset.schema_profile_artifact.get("warnings", [])
+    preprocess_warnings = (
+        dataset.analysis_preprocess_artifact.get("warnings", [])
+        if isinstance(dataset.analysis_preprocess_artifact, dict)
+        else []
+    )
+    return {
+        "dataset_id": dataset.dataset_id,
+        "filename": dataset.original_filename,
+        "analysis_basis": dataset.analysis_basis,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "numeric_column_count": len(numeric_columns),
+        "categorical_column_count": len(categorical_columns),
+        "numeric_columns": numeric_columns,
+        "categorical_columns": categorical_columns,
+        "preprocessing_log": dataset.preprocessing_log,
+        "warnings": [str(item) for item in [*schema_warnings, *preprocess_warnings] if item],
+    }
+
+
 def get_schema_profile(dataset_id: str) -> dict[str, Any]:
     return dataset_store.get_schema_profile(dataset_id)
 

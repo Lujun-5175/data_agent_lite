@@ -5,13 +5,21 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from src.api_models import ErrorPayload
+from src.request_context import get_request_id
 
 
 def error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    request_id = get_request_id()
     return JSONResponse(
         status_code=status_code,
-        content={"error": ErrorPayload(code=code, message=message).model_dump()},
-        headers={"X-Error-Code": code},
+        content={
+            "error": ErrorPayload(code=code, message=message).model_dump(),
+            "request_id": request_id,
+        },
+        headers={
+            "X-Error-Code": code,
+            **({"X-Request-ID": request_id} if request_id else {}),
+        },
     )
 
 

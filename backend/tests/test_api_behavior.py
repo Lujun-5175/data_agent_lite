@@ -30,9 +30,10 @@ def test_error_payload_shape_stable(client: TestClient):
     )
     assert response.status_code == 400
     payload = response.json()
-    assert set(payload.keys()) == {"error"}
+    assert set(payload.keys()) == {"error", "request_id"}
     assert set(payload["error"].keys()) == {"code", "message"}
     assert payload["error"]["code"] == "invalid_file_type"
+    assert payload["request_id"]
 
 
 def test_correlation_invalid_columns_returns_safe_error(client: TestClient):

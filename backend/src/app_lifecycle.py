@@ -35,14 +35,11 @@ def build_artifact_cleanup_lifespan(
         summary = cleanup_func(temp_dir=temp_dir_getter(), images_dir=images_dir_getter())
         logger.info("Startup artifact cleanup completed", extra=summary)
         task = asyncio.create_task(_artifact_cleanup_loop())
-        app.state.artifact_cleanup_task = task
         try:
             yield
         finally:
-            task = getattr(app.state, "artifact_cleanup_task", None)
-            if task is not None:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     return lifespan

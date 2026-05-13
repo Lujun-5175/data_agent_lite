@@ -12,7 +12,7 @@ from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from src.data_manager import get_data_info, get_dataset
+from src.data_manager import get_data_context_summary, get_dataset
 from src.routing_rules import (
     RoutingContext,
     decide_dataset_required,
@@ -20,6 +20,7 @@ from src.routing_rules import (
     decide_stats_intent,
     interpret_request,
 )
+from src.settings import SETTINGS
 from src.tools import (
     bind_current_dataset_id,
     fig_inter,
@@ -113,6 +114,49 @@ tools = [
     fig_inter,
     ml_execute,
 ]
+
+
+def _format_dataset_context_summary(summary: dict[str, Any]) -> str:
+    def _format_columns(columns: list[str], limit: int) -> str:
+        if not columns:
+            return "暂无"
+        visible = columns[:limit]
+        suffix = f" 等 {len(columns)} 列" if len(columns) > limit else ""
+        return "、".join(visible) + suffix
+
+    numeric_columns = [
+        str(column)
+        for column in summary.get("numeric_columns", [])
+        if isinstance(column, str)
+    ]
+    categorical_columns = [
+        str(column)
+        for column in summary.get("categorical_columns", [])
+        if isinstance(column, str)
+    ]
+    warnings = [
+        str(item)
+        for item in summary.get("warnings", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    preprocessing_log = [
+        str(item)
+        for item in summary.get("preprocessing_log", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    return (
+        f"文件名: {summary.get('filename', 'uploaded.csv')}\n"
+        f"dataset_id: {summary.get('dataset_id')}\n"
+        f"分析基于: {summary.get('analysis_basis', 'raw_df')}\n"
+        f"数据规模: {summary.get('row_count', 0)} 行 × {summary.get('column_count', 0)} 列\n"
+        f"数值字段({summary.get('numeric_column_count', 0)}): "
+        f"{_format_columns(numeric_columns, SETTINGS.chat_max_prompt_numeric_columns)}\n"
+        f"分类/日期字段({summary.get('categorical_column_count', 0)}): "
+        f"{_format_columns(categorical_columns, SETTINGS.chat_max_prompt_categorical_columns)}\n"
+        f"预处理提示: {_format_columns(preprocessing_log, 3)}\n"
+        f"关键 warning: {_format_columns(warnings, 3)}"
+    )
 
 def _normalize_text(message: str) -> str:
     return re.sub(r"\s+", " ", message.strip().lower())
@@ -276,7 +320,7 @@ def dataset_context_middleware(request) -> str:
         if dataset_id:
             dataset = get_dataset(dataset_id)
             dataset_columns = [column["name"] for column in dataset.columns if "name" in column]
-            data_context = get_data_info(dataset_id)
+            data_context = _format_dataset_context_summary(get_data_context_summary(dataset_id))
             dataset_scope = f"当前数据集 dataset_id: {dataset_id}，分析基于 {dataset.analysis_basis}。"
         else:
             data_context = "当前未选择数据集。普通聊天可以继续进行；如果用户需要分析具体数据，请先上传 CSV 文件。"
