@@ -72,6 +72,7 @@ class AppSettings:
     audit_log_enabled: bool = _get_bool("AUDIT_LOG_ENABLED", True)
     audit_log_path: str = os.getenv("AUDIT_LOG_PATH", "backend/audit_logs/audit.jsonl")
     audit_log_max_code_chars: int = _get_int("AUDIT_LOG_MAX_CODE_CHARS", 200)
+    audit_api_enabled: bool = _get_bool("AUDIT_API_ENABLED", False)
     self_correction_enabled: bool = _get_bool("SELF_CORRECTION_ENABLED", True)
     self_correction_max_attempts: int = _get_int("SELF_CORRECTION_MAX_ATTEMPTS", 2)
     self_correction_max_suggestions: int = _get_int("SELF_CORRECTION_MAX_SUGGESTIONS", 3)

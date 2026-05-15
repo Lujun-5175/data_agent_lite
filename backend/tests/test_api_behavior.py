@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
+from src import server
 from fastapi.testclient import TestClient
 
 
@@ -94,3 +97,24 @@ def test_dataset_overview_request_streams_metadata_without_agent_loop(client: Te
     assert "5 列" in response.text
     assert "每月销售额趋势是什么" in response.text
     assert "internal_error" not in response.text
+
+
+def test_audit_runs_hidden_when_not_enabled(client: TestClient, monkeypatch):
+    monkeypatch.setattr(server, "IS_DEVELOPMENT", False)
+    monkeypatch.setattr(server, "SETTINGS", replace(server.SETTINGS, audit_api_enabled=False))
+
+    response = client.get("/api/audit/runs")
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["error"]["code"] == "not_found"
+
+
+def test_audit_runs_available_in_development(client: TestClient, monkeypatch):
+    monkeypatch.setattr(server, "IS_DEVELOPMENT", True)
+    monkeypatch.setattr(server, "read_recent_records", lambda limit=100: [{"run_id": "abc"}])
+
+    response = client.get("/api/audit/runs?limit=5")
+
+    assert response.status_code == 200
+    assert response.json() == {"runs": [{"run_id": "abc"}], "limit": 5}

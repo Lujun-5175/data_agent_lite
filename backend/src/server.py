@@ -173,7 +173,9 @@ async def data_preview(dataset_id: str) -> dict[str, object]:
 
 
 @app.get("/api/audit/runs")
-async def audit_runs(limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, object]:
+async def audit_runs(request: Request, limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, object]:
+    if not (IS_DEVELOPMENT or SETTINGS.audit_api_enabled):
+        raise AppError("not_found", "资源不存在。", 404, stage="http")
     return {"runs": read_recent_records(limit=limit), "limit": limit}
 
 
