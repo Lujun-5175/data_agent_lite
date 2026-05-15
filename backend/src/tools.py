@@ -36,6 +36,7 @@ from src.data_manager import (
 )
 from src.errors import AppError
 from src.ml_helpers import BaselineMLService, MLHelperError
+from src.self_correction import build_repair_prompt, classify_execution_error
 from src.result_types import artifact_registry, build_artifact
 from src.settings import SETTINGS
 
@@ -1521,6 +1522,54 @@ def _output_size_bytes(result: str | None) -> int:
     return len(result.encode("utf-8"))
 
 
+def _available_columns_for_self_correction(df: pd.DataFrame | None) -> list[str] | None:
+    if df is None:
+        return None
+    return [str(column) for column in df.columns]
+
+
+def _structured_error_extra(
+    error: BaseException | str,
+    *,
+    available_columns: list[str] | None = None,
+    original_code: str | None = None,
+) -> dict[str, Any] | None:
+    if not SETTINGS.self_correction_enabled:
+        return None
+
+    structured_error = classify_execution_error(error, available_columns=available_columns)
+    if original_code is not None:
+        structured_error.repair_prompt = build_repair_prompt(
+            original_code=original_code,
+            structured_error=structured_error,
+            available_columns=available_columns,
+        )
+
+    payload: dict[str, Any] = {
+        "error_type": structured_error.error_type,
+        "retryable": structured_error.retryable,
+        "safe_to_retry": structured_error.safe_to_retry,
+    }
+    if structured_error.missing_column is not None:
+        payload["missing_column"] = structured_error.missing_column
+    if structured_error.suggestions:
+        payload["suggestions"] = [
+            {
+                "original": suggestion.original,
+                "suggestion": suggestion.suggestion,
+                "score": suggestion.score,
+            }
+            for suggestion in structured_error.suggestions[: SETTINGS.self_correction_max_suggestions]
+        ]
+    return {"structured_error": payload}
+
+
+def _is_execution_failure_text(result: str | None) -> bool:
+    if not isinstance(result, str):
+        return False
+    return result.startswith("代码执行失败:") or result.startswith("绘图执行失败:")
+
+
 def _record_tool_audit(
     *,
     tool_name: str,
@@ -1572,6 +1621,7 @@ def python_inter(py_code: str) -> str:
         )
         return result
 
+    available_columns = _available_columns_for_self_correction(df)
     try:
         data, viz, stats, profile, ml = _build_helper_api(df)
         env = {
@@ -1583,6 +1633,19 @@ def python_inter(py_code: str) -> str:
             "ml": ml,
         }
         result = EXECUTOR.safe_execute_python(py_code, env, df=df)
+        if _is_execution_failure_text(result):
+            _record_tool_audit(
+                tool_name="python_inter",
+                dataset_id=dataset_id,
+                tool_args={},
+                code=py_code,
+                execution_status="error",
+                start=start,
+                result=result,
+                error_message=result,
+                extra=_structured_error_extra(result, available_columns=available_columns, original_code=py_code),
+            )
+            return result
         _record_tool_audit(
             tool_name="python_inter",
             dataset_id=dataset_id,
@@ -1608,6 +1671,7 @@ def python_inter(py_code: str) -> str:
             start=start,
             result=result,
             error_message=exc.message,
+            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
         )
         return result
     except SafeExecutionError as exc:
@@ -1622,6 +1686,7 @@ def python_inter(py_code: str) -> str:
             result=result,
             error_message=str(exc),
             blocked_reason=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
         )
         return result
     except Exception as exc:
@@ -1633,6 +1698,7 @@ def python_inter(py_code: str) -> str:
             execution_status="error",
             start=start,
             error_message=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
         )
         raise
 
@@ -1659,6 +1725,7 @@ def fig_inter(py_code: str, fname: str) -> str:
         )
         return result
 
+    available_columns = _available_columns_for_self_correction(df)
     try:
         data, viz, stats, profile, ml = _build_helper_api(df)
         env = {
@@ -1671,6 +1738,19 @@ def fig_inter(py_code: str, fname: str) -> str:
         }
         set_current_image_event(None)
         result = EXECUTOR.safe_execute_plot(py_code, env, fname, df=df)
+        if _is_execution_failure_text(result):
+            _record_tool_audit(
+                tool_name="fig_inter",
+                dataset_id=dataset_id,
+                tool_args=tool_args,
+                code=py_code,
+                execution_status="error",
+                start=start,
+                result=result,
+                error_message=result,
+                extra=_structured_error_extra(result, available_columns=available_columns, original_code=py_code),
+            )
+            return result
         _record_tool_audit(
             tool_name="fig_inter",
             dataset_id=dataset_id,
@@ -1696,6 +1776,7 @@ def fig_inter(py_code: str, fname: str) -> str:
             start=start,
             result=result,
             error_message=exc.message,
+            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
         )
         return result
     except SafeExecutionError as exc:
@@ -1710,6 +1791,7 @@ def fig_inter(py_code: str, fname: str) -> str:
             result=result,
             error_message=str(exc),
             blocked_reason=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
         )
         return result
     except Exception as exc:
@@ -1721,6 +1803,7 @@ def fig_inter(py_code: str, fname: str) -> str:
             execution_status="error",
             start=start,
             error_message=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
         )
         raise
     finally:
@@ -1864,6 +1947,7 @@ def ml_execute(
         )
         return result
 
+    available_columns = _available_columns_for_self_correction(df)
     try:
         _, _, _, _, ml = _build_helper_api(df)
         if action == "train":
@@ -1920,6 +2004,7 @@ def ml_execute(
             start=start,
             result=result,
             error_message=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns),
         )
         return result
     except Exception as exc:
@@ -1931,6 +2016,7 @@ def ml_execute(
             execution_status="error",
             start=start,
             error_message=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns),
         )
         raise
 
@@ -1987,6 +2073,7 @@ def stats_execute(
         )
         return result
 
+    available_columns = _available_columns_for_self_correction(df)
     try:
         _, _, stats, _, _ = _build_helper_api(df)
         if action == "describe_numeric":
@@ -2093,6 +2180,7 @@ def stats_execute(
             start=start,
             result=result,
             error_message=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns),
         )
         return result
     except Exception as exc:
@@ -2104,5 +2192,6 @@ def stats_execute(
             execution_status="error",
             start=start,
             error_message=str(exc),
+            extra=_structured_error_extra(exc, available_columns=available_columns),
         )
         raise
