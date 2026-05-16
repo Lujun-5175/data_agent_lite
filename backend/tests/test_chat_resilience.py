@@ -91,6 +91,19 @@ class _ToolTimeoutGraph:
         yield {"event": "on_tool_end", "name": "python_inter", "data": {}}
 
 
+class _ConnectErrorGraph:
+    async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
+        request = httpx.Request("POST", "https://api.deepseek.com")
+        raise httpx.ConnectError("connection refused", request=request)
+        yield  # pragma: no cover
+
+
+class _UnknownModelErrorGraph:
+    async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
+        raise RuntimeError("DeepSeek quota exceeded for current workspace")
+        yield  # pragma: no cover
+
+
 def test_http_error_response_includes_request_id(client: TestClient):
     response = client.post("/chat/stream", json={"input": {"messages": []}})
     assert response.status_code == 422
@@ -216,6 +229,61 @@ def test_tool_timeout_becomes_structured_sse_error(monkeypatch: pytest.MonkeyPat
     assert error_payload["code"] == "tool_execution_timeout"
     assert error_payload["stage"] == "tool_execution"
     assert error_payload["request_id"]
+
+
+def test_connect_error_is_reported_with_specific_error_code(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    monkeypatch.setattr(server, "graph", _ConnectErrorGraph())
+    dataset_id = _upload_fixture_dataset(client)
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "分析一下 churn"}]},
+        },
+    )
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    error_payload = next(payload for event_type, payload in events if event_type == "error")
+    assert error_payload["code"] == "upstream_model_connection_error"
+    assert error_payload["stage"] == "model_stream"
+    assert "connection refused" in error_payload["message"]
+
+
+def test_unknown_model_error_preserves_backend_message(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    monkeypatch.setattr(server, "graph", _UnknownModelErrorGraph())
+    dataset_id = _upload_fixture_dataset(client)
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "分析一下 churn"}]},
+        },
+    )
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    error_payload = next(payload for event_type, payload in events if event_type == "error")
+    assert error_payload["code"] == "internal_error"
+    assert error_payload["stage"] == "model_stream"
+    assert error_payload["message"] == "模型调用失败：DeepSeek quota exceeded for current workspace"
+
+
+@pytest.mark.parametrize("query", ["讲解一下这个数据集", "介绍这份数据", "看看这个表"])
+def test_dataset_overview_variants_stream_metadata_without_agent_loop(query: str, client: TestClient):
+    dataset_id = _upload_fixture_dataset(client)
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": query}]},
+        },
+    )
+    assert response.status_code == 200
+    assert "数据规模" in response.text
+    assert "你可以直接点上方推荐问题" in response.text
+    assert "internal_error" not in response.text
 
 
 def test_long_history_summary_keeps_older_constraints(client: TestClient):

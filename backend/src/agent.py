@@ -341,7 +341,9 @@ def dataset_context_middleware(request) -> str:
         )
         logger.debug("stats intent decision: %s", stats_decision.to_dict())
         logger.debug("request interpretation: %s", interpretation.to_dict())
-        if interpretation.intent_type == "ml":
+        if interpretation.is_dataset_overview:
+            route_hint = "这是数据集概览请求。优先基于当前 schema/profile 直接讲解，不要进入多余的工具循环。"
+        elif interpretation.intent_type == "ml":
             route_hint = (
                 "这是明确建模请求。选择最小必要步骤，"
                 "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"

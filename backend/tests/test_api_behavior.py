@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from pathlib import Path
 
 from src import server
+from src import chat_service
+from src.audit_log import AuditLogger
 from fastapi.testclient import TestClient
 
 
@@ -99,6 +103,27 @@ def test_dataset_overview_request_streams_metadata_without_agent_loop(client: Te
     assert "internal_error" not in response.text
 
 
+def test_upload_response_includes_recommended_prompts(client: TestClient):
+    response = client.post(
+        "/upload",
+        files={
+            "file": (
+                "sales_sample.csv",
+                (
+                    b"order_date,total_amount,product_category,region,channel\n"
+                    b"2025-01-01,120.5,Electronics,West,Online\n"
+                    b"2025-01-02,88.0,Home,East,Offline\n"
+                ),
+                "text/csv",
+            )
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload.get("recommended_prompts"), list)
+    assert payload["recommended_prompts"]
+
+
 def test_audit_runs_hidden_when_not_enabled(client: TestClient, monkeypatch):
     monkeypatch.setattr(server, "IS_DEVELOPMENT", False)
     monkeypatch.setattr(server, "SETTINGS", replace(server.SETTINGS, audit_api_enabled=False))
@@ -118,3 +143,42 @@ def test_audit_runs_available_in_development(client: TestClient, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"runs": [{"run_id": "abc"}], "limit": 5}
+
+
+def test_dataset_overview_request_writes_chat_route_audit(client: TestClient, monkeypatch, tmp_path: Path):
+    audit_path = tmp_path / "audit.jsonl"
+    logger = AuditLogger(path=audit_path)
+    monkeypatch.setattr(chat_service, "get_audit_logger", lambda: logger)
+
+    upload_response = client.post(
+        "/upload",
+        files={
+            "file": (
+                "sales_sample.csv",
+                (
+                    b"order_date,total_amount,product_category,region,channel\n"
+                    b"2025-01-01,120.5,Electronics,West,Online\n"
+                    b"2025-01-02,88.0,Home,East,Offline\n"
+                ),
+                "text/csv",
+            )
+        },
+    )
+    assert upload_response.status_code == 200
+    dataset_id = upload_response.json()["dataset_id"]
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "input": {"messages": [{"type": "human", "content": "讲解一下这个数据集"}]},
+            "config": {"configurable": {"dataset_id": dataset_id}},
+        },
+    )
+
+    assert response.status_code == 200
+    records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    route_record = next(record for record in records if record["tool_name"] == "chat_route")
+    assert route_record["tool_args"]["is_dataset_overview"] is True
+    assert route_record["extra"]["routing"]["final_intent"] in {"analysis", "followup"}
+    assert route_record["extra"]["routing"]["conflict_flags"] is not None

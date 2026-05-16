@@ -238,7 +238,8 @@ class BaselineMLService:
         return artifact_registry.register(self.dataset_id, artifact)
 
     def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
-        artifact = artifact_registry.get_latest(self.dataset_id, artifact_type=artifact_type or "model_result")
+        resolved_artifact_type = self._normalize_latest_artifact_type(artifact_type)
+        artifact = artifact_registry.get_latest(self.dataset_id, artifact_type=resolved_artifact_type)
         if artifact is None:
             raise MLHelperError("当前还没有可复用的模型结果，请先训练 baseline 模型。")
         return artifact
@@ -355,3 +356,18 @@ class BaselineMLService:
         except Exception:
             pass
         return round(float(value), 6)
+
+    def _normalize_latest_artifact_type(self, artifact_type: str | None) -> str:
+        if artifact_type is None:
+            return "model_result"
+
+        normalized = str(artifact_type).strip().lower()
+        alias_map = {
+            "model": "model_result",
+            "model_result": "model_result",
+            "metrics": "metrics_result",
+            "metrics_result": "metrics_result",
+            "feature_importance": "feature_importance_result",
+            "feature_importance_result": "feature_importance_result",
+        }
+        return alias_map.get(normalized, normalized or "model_result")

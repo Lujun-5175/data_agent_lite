@@ -6,7 +6,6 @@ export interface SampleDataset {
   rowCount: number;
   columnCount: number;
   path: string;
-  prompts: string[];
 }
 
 export const SAMPLE_DATASETS: SampleDataset[] = [
@@ -18,11 +17,6 @@ export const SAMPLE_DATASETS: SampleDataset[] = [
     rowCount: 800,
     columnCount: 10,
     path: '/sample_data/sales_data.csv',
-    prompts: [
-      '每月销售额趋势是什么？请画一张折线图。',
-      '哪个商品品类收入最高？请按区域对比。',
-      '比较线上和线下渠道的 total_amount，做一个 t 检验。',
-    ],
   },
   {
     id: 'students',
@@ -32,11 +26,6 @@ export const SAMPLE_DATASETS: SampleDataset[] = [
     rowCount: 300,
     columnCount: 9,
     path: '/sample_data/student_scores.csv',
-    prompts: [
-      'study_hours 和 final_score 的相关性是多少？',
-      '用 study_hours 和 attendance_rate 预测 final_score，跑一个线性回归。',
-      '男生和女生的成绩是否有显著差异？请做 t 检验。',
-    ],
   },
   {
     id: 'behavior',
@@ -46,10 +35,5 @@ export const SAMPLE_DATASETS: SampleDataset[] = [
     rowCount: 1000,
     columnCount: 9,
     path: '/sample_data/user_behavior.csv',
-    prompts: [
-      '比较 ab_group A 和 B 的 conversion_flag 转化率，并做卡方检验。',
-      '哪个 channel_source 的转化率最高？',
-      '按 session_count 对用户分层，并可视化分布。',
-    ],
   },
 ];

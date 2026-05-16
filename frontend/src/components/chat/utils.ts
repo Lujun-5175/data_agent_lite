@@ -38,6 +38,9 @@ export function normalizeUploadedDataset(result: ServerUploadResponse, fallbackF
     previewCount: typeof result.preview_count === 'number' ? result.preview_count : 0,
     analysisBasis: result.analysis_basis ?? 'working_df',
     preprocessingLog: Array.isArray(result.preprocessing_log) ? result.preprocessing_log : [],
+    recommendedPrompts: Array.isArray(result.recommended_prompts)
+      ? result.recommended_prompts.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
   };
 }
 

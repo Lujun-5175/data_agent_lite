@@ -16,6 +16,7 @@ export interface UploadedDataset {
   previewCount: number;
   analysisBasis: 'working_df' | string;
   preprocessingLog: string[];
+  recommendedPrompts: string[];
 }
 
 export interface ServerUploadResponse {
@@ -32,4 +33,5 @@ export interface ServerUploadResponse {
   preview_count?: number;
   analysis_basis?: string;
   preprocessing_log?: string[];
+  recommended_prompts?: string[];
 }

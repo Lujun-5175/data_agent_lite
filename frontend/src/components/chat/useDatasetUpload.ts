@@ -69,7 +69,7 @@ export function useDatasetUpload({
       }
       const dataset = normalizeUploadedDataset(result, file.name);
       setUploadedDataset(dataset);
-      setSuggestedPrompts(options?.sample?.prompts ?? []);
+      setSuggestedPrompts(dataset.recommendedPrompts);
       replaceDatasetCard(dataset);
       toast.success(options?.sample ? `示例数据已加载：${options.sample.name}` : result.message || `成功加载文件【${dataset.filename}】`);
       resetFileInput();

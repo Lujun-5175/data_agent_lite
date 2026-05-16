@@ -10,10 +10,27 @@ from fastapi import Request
 from langgraph.errors import GraphRecursionError
 
 from src.agent import AgentContext, generate_general_chat_reply, get_dataset_required_decision
+from src.audit_log import get_audit_logger
+from src.chat_config import (
+    CHART_MARKERS,
+    FOLLOW_UP_MARKERS,
+    ML_IMPORTANCE_TERMS,
+    ML_METRICS_TERMS,
+    ML_TRAINING_TERMS,
+    contains_any_term,
+    looks_like_dataset_overview_fallback,
+    normalize_message_text,
+)
 from src.conversation_context import compress_conversation_messages
-from src.data_manager import get_dataset
+from src.data_manager import get_dataset, get_dataset_recommended_prompts
 from src.errors import AppError
-from src.request_context import get_degradation_mode, get_request_id, set_degradation_mode, set_failure_stage
+from src.request_context import (
+    get_degradation_mode,
+    get_request_id,
+    set_degradation_mode,
+    set_failure_stage,
+    set_route_diagnostics,
+)
 from src.request_parsing import (
     extract_dataset_id_from_payload,
     extract_latest_user_message,
@@ -31,102 +48,6 @@ logger = logging.getLogger(__name__)
 ML_RESULT_ARTIFACT_TYPES = {"model_result", "metrics_result", "feature_importance_result"}
 ML_DIRECT_TOOL_NAMES = {"ml_execute"}
 
-FOLLOW_UP_MARKERS = (
-    "解释",
-    "刚才",
-    "之前",
-    "上一个",
-    "上个",
-    "这个结果",
-    "这结果",
-    "上面的结果",
-    "继续",
-    "follow up",
-    "follow-up",
-)
-
-CHART_MARKERS = (
-    "画图",
-    "绘图",
-    "生成图",
-    "生成一个图",
-    "图表",
-    "柱状图",
-    "折线图",
-    "散点图",
-    "直方图",
-    "热力图",
-    "可视化",
-    "chart",
-    "plot",
-    "visualize",
-)
-
-DATASET_OVERVIEW_MARKERS = (
-    "讲解数据集",
-    "介绍数据集",
-    "解释数据集",
-    "数据集概览",
-    "数据集说明",
-    "看看数据集",
-    "了解数据集",
-    "describe dataset",
-    "explain dataset",
-    "summarize dataset",
-    "dataset overview",
-)
-
-ML_TRAINING_TERMS = (
-    "train a model",
-    "train a logistic regression model",
-    "train a linear regression model",
-    "train model",
-    "build a model",
-    "build model",
-    "fit model",
-    "baseline model",
-    "classifier",
-    "classification model",
-    "logistic regression",
-    "linear regression",
-    "predict",
-    "prediction",
-    "forecast",
-    "训练模型",
-    "训练一个模型",
-    "训练一个 baseline",
-    "分类器",
-    "分类模型",
-    "逻辑回归",
-    "线性回归",
-    "预测",
-    "预测一下",
-)
-
-ML_METRICS_TERMS = (
-    "model metrics",
-    "metrics",
-    "accuracy",
-    "precision",
-    "recall",
-    "f1",
-    "auc",
-    "roc auc",
-    "模型指标",
-    "准确率",
-    "精确率",
-    "召回率",
-)
-
-ML_IMPORTANCE_TERMS = (
-    "feature importance",
-    "coefficients",
-    "coefficient",
-    "特征重要性",
-    "重要特征",
-    "系数",
-)
-
 
 @dataclass(slots=True)
 class ChatRequestRequirements:
@@ -137,6 +58,9 @@ class ChatRequestRequirements:
     latest_user_message: str
     prior_analysis_active: bool
     interpretation_intent: str
+    interpretation_confidence: str
+    interpretation_conflict_flags: list[str]
+    interpretation_route_source: str
     chart_requested: bool
     explicit_ml_request: bool
     required_ml_artifacts: set[str]
@@ -207,11 +131,11 @@ class LoopGuardState:
 
 
 def _normalize_text(value: str) -> str:
-    return " ".join(value.strip().lower().split())
+    return normalize_message_text(value)
 
 
 def _contains_any_term(value: str, terms: tuple[str, ...]) -> bool:
-    return any(term in value for term in terms)
+    return contains_any_term(value, terms)
 
 
 def _looks_like_follow_up_request(message: str) -> bool:
@@ -245,8 +169,13 @@ def _collect_required_ml_artifacts(message: str) -> set[str]:
     return required
 
 
-def _build_follow_up_context_message(dataset_id: str, latest_user_message: str) -> dict[str, object] | None:
-    if not _looks_like_follow_up_request(latest_user_message):
+def _build_follow_up_context_message(
+    dataset_id: str,
+    latest_user_message: str,
+    *,
+    force_follow_up: bool = False,
+) -> dict[str, object] | None:
+    if not force_follow_up and not _looks_like_follow_up_request(latest_user_message):
         return None
 
     latest_artifact = artifact_registry.get_latest(dataset_id)
@@ -329,9 +258,14 @@ def _looks_like_internal_intent_payload(text: str) -> bool:
         return False
     intent_keys = {
         "intent_type",
+        "is_dataset_overview",
+        "is_follow_up",
         "requires_ml",
         "requires_chart",
         "requires_python_analysis",
+        "confidence",
+        "conflict_flags",
+        "route_source",
         "reasoning_summary",
         "suggested_plan",
     }
@@ -372,7 +306,7 @@ def _strip_internal_intent_payload_prefix(text: str) -> str:
 
 
 def _looks_like_dataset_overview_request(message: str) -> bool:
-    return _contains_any_term(_normalize_text(message), DATASET_OVERVIEW_MARKERS)
+    return looks_like_dataset_overview_fallback(message)
 
 
 def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
@@ -381,32 +315,6 @@ def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
     visible_columns = columns[:limit]
     suffix = f" 等 {len(columns)} 列" if len(columns) > limit else ""
     return "、".join(visible_columns) + suffix
-
-
-def _build_recommended_dataset_questions(column_names: set[str]) -> list[str]:
-    if {"order_date", "total_amount", "product_category", "region", "channel"}.issubset(column_names):
-        return [
-            "每月销售额趋势是什么？请画一张折线图。",
-            "哪个商品品类收入最高？请按区域对比。",
-            "比较线上和线下渠道的 total_amount，做一个 t 检验。",
-        ]
-    if {"study_hours", "attendance_rate", "final_score", "gender"}.issubset(column_names):
-        return [
-            "study_hours 和 final_score 的相关性是多少？",
-            "用 study_hours 和 attendance_rate 预测 final_score，跑一个线性回归。",
-            "男女学生成绩是否有显著差异？请做 t 检验。",
-        ]
-    if {"conversion_flag", "ab_group", "channel_source", "session_count"}.issubset(column_names):
-        return [
-            "比较 A/B 组的 conversion_flag 转化率，并做卡方检验。",
-            "哪个 channel_source 的转化率最高？",
-            "按 session_count 给用户分层，并可视化分布。",
-        ]
-    return [
-        "请先做一份描述性统计，并指出值得关注的字段。",
-        "哪些数值字段之间可能存在相关性？",
-        "按一个关键分类字段分组，比较主要指标差异。",
-    ]
 
 
 def _build_event_payload(
@@ -447,6 +355,13 @@ def _build_done_sse(*, dataset_id: str | None = None) -> str:
     return format_sse("done", _build_event_payload({}, dataset_id=dataset_id, include_done_metadata=True))
 
 
+def _clean_exception_message(exc: Exception, *, limit: int = 240) -> str | None:
+    text = " ".join(str(exc).strip().split())
+    if not text:
+        return None
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
 def _classify_stream_exception(exc: Exception) -> AppError:
     if isinstance(exc, AppError):
         return exc
@@ -482,12 +397,55 @@ def _classify_stream_exception(exc: Exception) -> AppError:
             retryable=True,
             stage="model_stream",
         )
+    if isinstance(exc, httpx.ConnectError):
+        detail = _clean_exception_message(exc)
+        message = "上游模型连接失败，请检查网络或模型服务配置。"
+        if detail:
+            message = f"{message} 详情：{detail}"
+        return AppError(
+            "upstream_model_connection_error",
+            message,
+            500,
+            retryable=True,
+            stage="model_stream",
+        )
+    if isinstance(exc, httpx.HTTPStatusError):
+        detail = _clean_exception_message(exc)
+        status_code = exc.response.status_code if exc.response is not None else None
+        message = "上游模型服务返回异常状态。"
+        if isinstance(status_code, int):
+            message = f"{message} HTTP {status_code}。"
+        if detail:
+            message = f"{message} 详情：{detail}"
+        return AppError(
+            "upstream_model_http_error",
+            message,
+            500,
+            retryable=bool(isinstance(status_code, int) and status_code >= 500),
+            stage="model_stream",
+        )
+    if isinstance(exc, httpx.RequestError):
+        detail = _clean_exception_message(exc)
+        message = "上游模型请求失败，请检查网络连接后重试。"
+        if detail:
+            message = f"{message} 详情：{detail}"
+        return AppError(
+            "upstream_model_request_error",
+            message,
+            500,
+            retryable=True,
+            stage="model_stream",
+        )
+    detail = _clean_exception_message(exc)
+    message = "服务器内部错误，请稍后重试。"
+    if detail:
+        message = f"模型调用失败：{detail}"
     return AppError(
         "internal_error",
-        "服务器内部错误，请稍后重试。",
+        message,
         500,
         retryable=False,
-        stage="unknown",
+        stage="model_stream",
     )
 
 
@@ -531,13 +489,8 @@ def _check_loop_guard(loop_guard: LoopGuardState) -> None:
         )
 
 
-def build_dataset_overview_reply(dataset: object) -> str:
+def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[str]) -> str:
     columns = getattr(dataset, "columns", [])
-    column_names = [
-        str(column.get("name"))
-        for column in columns
-        if isinstance(column, dict) and column.get("name")
-    ]
     numeric_columns = [
         str(column.get("name"))
         for column in columns
@@ -551,7 +504,7 @@ def build_dataset_overview_reply(dataset: object) -> str:
     schema_profile = getattr(dataset, "schema_profile_artifact", {})
     warnings = schema_profile.get("warnings", []) if isinstance(schema_profile, dict) else []
     warning_lines = [str(item) for item in warnings[:3] if item]
-    recommendation_lines = _build_recommended_dataset_questions(set(column_names))
+    recommendation_lines = recommended_prompts
 
     lines = [
         "这份数据集已经加载好了，我先帮你快速讲解一下：",
@@ -572,6 +525,36 @@ def build_dataset_overview_reply(dataset: object) -> str:
     return "\n".join(lines)
 
 
+def _record_chat_route_audit(requirements: ChatRequestRequirements) -> None:
+    try:
+        get_audit_logger().record(
+            tool_name="chat_route",
+            dataset_id=requirements.dataset_id,
+            tool_args={
+                "intent_type": requirements.interpretation_intent,
+                "chart_requested": requirements.chart_requested,
+                "explicit_ml_request": requirements.explicit_ml_request,
+                "is_dataset_overview": requirements.is_dataset_overview,
+            },
+            execution_status="success",
+            latency_ms=0.0,
+            extra={
+                "request_id": get_request_id(),
+                "message_preview": requirements.latest_user_message[:120],
+                "route_stage": "request_analysis",
+                "routing": {
+                    "final_intent": requirements.interpretation_intent,
+                    "confidence": requirements.interpretation_confidence,
+                    "conflict_flags": requirements.interpretation_conflict_flags,
+                    "route_source": requirements.interpretation_route_source,
+                    "used_fallback": requirements.interpretation_route_source == "heuristic_fallback",
+                },
+            },
+        )
+    except Exception:
+        logger.warning("Audit logging failed for chat route", exc_info=True)
+
+
 def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     dataset_id = extract_dataset_id_from_payload(payload)
     messages = extract_messages(payload)
@@ -580,6 +563,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
 
     latest_user_message = extract_latest_user_message(messages)
     prior_analysis_active = has_prior_analysis_context(messages)
+    dataset_columns: list[str] = []
 
     if not dataset_id:
         dataset_required_decision = get_dataset_required_decision(
@@ -594,6 +578,13 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
                 400,
                 stage="validation",
             )
+    else:
+        dataset = get_dataset(dataset_id)
+        dataset_columns = [
+            str(column.get("name"))
+            for column in getattr(dataset, "columns", [])
+            if isinstance(column, dict) and column.get("name")
+        ]
 
     compressed = compress_conversation_messages(messages, dataset_id=dataset_id)
     if not compressed.messages_for_model:
@@ -602,8 +593,18 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     interpretation = interpret_request(
         RoutingContext(
             message=latest_user_message,
+            dataset_columns=dataset_columns,
             prior_analysis_active=prior_analysis_active,
         )
+    )
+    set_route_diagnostics(
+        {
+            "final_intent": interpretation.intent_type,
+            "confidence": interpretation.confidence,
+            "conflict_flags": interpretation.conflict_flags,
+            "route_source": interpretation.route_source,
+            "used_fallback": interpretation.route_source == "heuristic_fallback",
+        }
     )
     simple_mode_messages = []
     if compressed.summary_message is not None:
@@ -641,11 +642,22 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         latest_user_message=latest_user_message,
         prior_analysis_active=prior_analysis_active,
         interpretation_intent=interpretation.intent_type,
-        chart_requested=_looks_like_chart_request(latest_user_message),
+        interpretation_confidence=interpretation.confidence,
+        interpretation_conflict_flags=list(interpretation.conflict_flags),
+        interpretation_route_source=interpretation.route_source,
+        chart_requested=interpretation.requires_chart or _looks_like_chart_request(latest_user_message),
         explicit_ml_request=_looks_like_explicit_ml_request(latest_user_message),
         required_ml_artifacts=_collect_required_ml_artifacts(latest_user_message),
-        follow_up_message=_build_follow_up_context_message(dataset_id, latest_user_message) if dataset_id else None,
-        is_dataset_overview=bool(dataset_id and _looks_like_dataset_overview_request(latest_user_message)),
+        follow_up_message=(
+            _build_follow_up_context_message(
+                dataset_id,
+                latest_user_message,
+                force_follow_up=interpretation.is_follow_up,
+            )
+            if dataset_id
+            else None
+        ),
+        is_dataset_overview=bool(dataset_id and (interpretation.is_dataset_overview or _looks_like_dataset_overview_request(latest_user_message))),
         history_message_count=compressed.history_message_count,
         compressed_history_count=compressed.compressed_history_count,
         artifact_refs_count=compressed.artifact_refs_count,
@@ -792,6 +804,7 @@ async def create_chat_stream_response(
 ) -> Any:
     requirements = analyze_chat_request(payload)
     dataset_id = requirements.dataset_id
+    _record_chat_route_audit(requirements)
 
     logger.info(
         "chat_stream payload received",
@@ -800,6 +813,9 @@ async def create_chat_stream_response(
             "dataset_id": dataset_id,
             "message_preview": requirements.latest_user_message[:80],
             "intent_type": requirements.interpretation_intent,
+            "intent_confidence": requirements.interpretation_confidence,
+            "intent_conflict_flags": requirements.interpretation_conflict_flags,
+            "intent_route_source": requirements.interpretation_route_source,
             "history_message_count": requirements.history_message_count,
             "compressed_history_count": requirements.compressed_history_count,
             "artifact_refs_count": requirements.artifact_refs_count,
@@ -836,6 +852,8 @@ async def create_chat_stream_response(
                             "degradation_mode": mode,
                             "error_code": mapped_error.code,
                             "failure_stage": mapped_error.stage,
+                            "intent_confidence": requirements.interpretation_confidence,
+                            "intent_route_source": requirements.interpretation_route_source,
                         },
                     )
                     if mapped_error.retryable and index < len(attempts) - 1:
@@ -850,10 +868,11 @@ async def create_chat_stream_response(
     if requirements.is_dataset_overview:
         async def dataset_overview_event_generator():
             with bind_current_dataset_id(dataset_id):
+                recommended_prompts = get_dataset_recommended_prompts(dataset_id)
                 yield format_sse(
                     "message_chunk",
                     _build_event_payload(
-                        {"content": build_dataset_overview_reply(dataset)},
+                        {"content": build_dataset_overview_reply(dataset, recommended_prompts=recommended_prompts)},
                         dataset_id=dataset_id,
                     ),
                 )
@@ -901,6 +920,9 @@ async def create_chat_stream_response(
                                 "compressed_history_count": requirements.compressed_history_count,
                                 "artifact_refs_count": requirements.artifact_refs_count,
                                 "intent_type": requirements.interpretation_intent,
+                                "intent_confidence": requirements.interpretation_confidence,
+                                "intent_conflict_flags": requirements.interpretation_conflict_flags,
+                                "intent_route_source": requirements.interpretation_route_source,
                                 "failure_stage": mapped_error.stage,
                                 "error_code": mapped_error.code,
                                 "attempt": index,
@@ -927,6 +949,8 @@ async def create_chat_stream_response(
                         "dataset_id": dataset_id,
                         "failure_stage": mapped_error.stage,
                         "error_code": mapped_error.code,
+                        "intent_confidence": requirements.interpretation_confidence,
+                        "intent_route_source": requirements.interpretation_route_source,
                     },
                 )
                 yield _build_error_sse(mapped_error, dataset_id=dataset_id)

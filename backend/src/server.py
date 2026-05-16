@@ -28,6 +28,7 @@ from src.data_manager import (
     cleanup_expired_artifacts,
     get_data_preview,
     get_dataset,
+    get_dataset_recommended_prompts,
     load_csv_file,
 )
 from src.errors import AppError
@@ -169,6 +170,7 @@ async def data_preview(dataset_id: str) -> dict[str, object]:
         "schema_profile": dataset.schema_profile_artifact,
         "analysis_preprocess": dataset.analysis_preprocess_artifact,
         "model_prep_plan": dataset.model_prep_plan_artifact,
+        "recommended_prompts": get_dataset_recommended_prompts(dataset.dataset_id),
     }
 
 
@@ -204,6 +206,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
                 target.write(chunk)
 
         dataset = load_csv_file(stored_path, original_filename)
+        recommended_prompts = get_dataset_recommended_prompts(dataset.dataset_id)
         return JSONResponse(
             content={
                 "status": "success",
@@ -218,6 +221,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
                 "row_count": dataset.row_count,
                 "column_count": dataset.column_count,
                 "preview_count": dataset.preview_count,
+                "recommended_prompts": recommended_prompts,
                 "columns": dataset.columns,
                 "filename": dataset.original_filename,
                 "schema_profile": dataset.schema_profile_artifact,

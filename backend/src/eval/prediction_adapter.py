@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from src.result_normalizer import normalize_result_payload
+
 from .schema import EvalCase, EvalPrediction
 
 
@@ -25,7 +27,7 @@ def normalize_prediction(raw: dict[str, Any]) -> EvalPrediction:
         "execution_status": _coerce_code_str(
             _first_non_none(raw.get("execution_status"), raw.get("status"))
         ),
-        "result": _coerce_optional_dict(_first_non_none(raw.get("result"), raw.get("payload"))),
+        "result": _normalize_optional_payload(_first_non_none(raw.get("result"), raw.get("payload"))),
         "error_message": _coerce_optional_str(_first_non_none(raw.get("error_message"), raw.get("error"))),
     }
     return EvalPrediction.model_validate(payload)
@@ -105,7 +107,7 @@ def prediction_from_audit_record(record: dict[str, Any]) -> EvalPrediction | Non
 def _build_result_from_extra(extra: dict[str, Any]) -> dict[str, Any] | None:
     nested_result = extra.get("result")
     if isinstance(nested_result, dict):
-        return nested_result
+        return normalize_result_payload(nested_result)
 
     result: dict[str, Any] = {}
     allowed_scalar_keys = {
@@ -136,9 +138,9 @@ def _build_result_from_extra(extra: dict[str, Any]) -> dict[str, Any] | None:
         if key in {"case_id", "result", "tool_args"}:
             continue
         if key in allowed_scalar_keys and (isinstance(value, (str, int, float, bool)) or value is None):
-            result[key] = value
+            result[key] = normalize_result_payload(value)
         elif key in allowed_collection_keys and isinstance(value, (dict, list)):
-            result[key] = value
+            result[key] = normalize_result_payload(value)
     return result or None
 
 
@@ -192,6 +194,20 @@ def _coerce_optional_dict(value: Any) -> dict[str, Any] | None:
             return parsed
         return None
     return None
+
+
+def _normalize_optional_payload(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    normalized = normalize_result_payload(value)
+    if isinstance(normalized, (dict, list)):
+        if isinstance(normalized, list):
+            payload: dict[str, Any] = {"items": normalized, "row_count": len(normalized)}
+            if normalized and all(isinstance(item, dict) for item in normalized):
+                payload["rows"] = normalized
+            return payload
+        return normalized
+    return {"value": normalized}
 
 
 def _summarize_code(code: str) -> dict[str, str]:

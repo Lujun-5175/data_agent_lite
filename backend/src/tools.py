@@ -35,6 +35,7 @@ from src.data_manager import (
     register_dataset_generated_image,
 )
 from src.errors import AppError
+from src.request_context import get_route_diagnostics
 from src.ml_helpers import BaselineMLService, MLHelperError
 from src.self_correction import build_repair_prompt, classify_execution_error
 from src.result_types import artifact_registry, build_artifact
@@ -1584,6 +1585,10 @@ def _record_tool_audit(
     extra: dict[str, Any] | None = None,
 ) -> None:
     try:
+        merged_extra = dict(extra or {})
+        route_diagnostics = get_route_diagnostics()
+        if isinstance(route_diagnostics, dict) and route_diagnostics:
+            merged_extra["routing"] = route_diagnostics
         get_audit_logger().record(
             tool_name=tool_name,
             dataset_id=dataset_id,
@@ -1594,7 +1599,7 @@ def _record_tool_audit(
             output_size_bytes=_output_size_bytes(result),
             error_message=error_message,
             blocked_reason=blocked_reason,
-            extra=extra,
+            extra=merged_extra or None,
         )
     except Exception:
         logger.warning("Audit logging failed for tool %s", tool_name, exc_info=True)

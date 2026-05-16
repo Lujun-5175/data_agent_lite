@@ -12,6 +12,7 @@ from uuid import uuid4
 import numpy as np
 import pandas as pd
 
+from src.dataset_recommendations import generate_recommended_prompts
 from src.errors import AppError
 from src.preprocessing import ModelPrepPlanError, plan_model_preprocessing, prepare_analysis_dataframe
 from src.result_types import artifact_registry, build_artifact
@@ -56,6 +57,7 @@ class Dataset:
     encoding: str
     preprocessing_log: list[str]
     schema_profile_artifact: dict[str, Any]
+    recommended_prompts: list[str] = field(default_factory=list)
     analysis_preprocess_artifact: dict[str, Any] | None = None
     model_prep_plan_artifact: dict[str, Any] | None = None
     preprocessed: bool = False
@@ -153,6 +155,7 @@ class DatasetStore:
             encoding=encoding,
             preprocessing_log=preprocessing_log,
             schema_profile_artifact=profile_artifact,
+            recommended_prompts=[],
             preprocessed=False,
         )
         with self._lock:
@@ -307,6 +310,22 @@ class DatasetStore:
         dataset.model_prep_plan_artifact = plan_artifact
         return plan_artifact
 
+    def get_or_create_recommended_prompts(self, dataset_id: str) -> list[str]:
+        dataset = self.get_dataset(dataset_id)
+        if dataset.recommended_prompts:
+            return list(dataset.recommended_prompts)
+
+        prompts = generate_recommended_prompts(
+            dataset_summary=_build_dataset_summary(dataset),
+            schema_profile=dataset.schema_profile_artifact,
+        )
+        with self._lock:
+            current_dataset = self._datasets.get(dataset_id)
+            if current_dataset is not None and not current_dataset.recommended_prompts:
+                current_dataset.recommended_prompts = list(prompts)
+            dataset = current_dataset or dataset
+        return list(dataset.recommended_prompts)
+
 
 dataset_store = DatasetStore()
 
@@ -432,6 +451,29 @@ def get_data_context_summary(dataset_id: str) -> dict[str, Any]:
     }
 
 
+def _build_dataset_summary(dataset: Dataset) -> dict[str, Any]:
+    working_df = dataset.working_df
+    columns = _build_columns(working_df)
+    numeric_columns = [column["name"] for column in columns if column.get("type") == "numerical"]
+    categorical_columns = [column["name"] for column in columns if column.get("type") != "numerical"]
+    schema_warnings = dataset.schema_profile_artifact.get("warnings", [])
+    preprocess_warnings = (
+        dataset.analysis_preprocess_artifact.get("warnings", [])
+        if isinstance(dataset.analysis_preprocess_artifact, dict)
+        else []
+    )
+    return {
+        "dataset_id": dataset.dataset_id,
+        "filename": dataset.original_filename,
+        "analysis_basis": dataset.analysis_basis,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "numeric_columns": numeric_columns,
+        "categorical_columns": categorical_columns,
+        "warnings": [str(item) for item in [*schema_warnings, *preprocess_warnings] if item],
+    }
+
+
 def get_schema_profile(dataset_id: str) -> dict[str, Any]:
     return dataset_store.get_schema_profile(dataset_id)
 
@@ -447,6 +489,10 @@ def get_model_prep_plan(
     features: list[str] | None = None,
 ) -> dict[str, Any]:
     return dataset_store.get_or_create_model_prep_plan(dataset_id, target=target, features=features)
+
+
+def get_dataset_recommended_prompts(dataset_id: str) -> list[str]:
+    return dataset_store.get_or_create_recommended_prompts(dataset_id)
 
 
 def calculate_correlation(dataset_id: str, col1: str, col2: str) -> dict[str, Any]:

@@ -125,34 +125,58 @@ def test_interpretation_follow_up_model_request():
         RoutingContext(message="use the previous model again")
     )
     assert interpretation.intent_type == "followup"
+    assert interpretation.is_follow_up is True
     assert interpretation.requires_ml is True
     assert any(token in " ".join(interpretation.suggested_plan).lower() for token in ("reuse", "previous", "latest"))
 
 
+def test_interpretation_dataset_overview_request():
+    interpretation = interpret_request(
+        RoutingContext(message="讲解一下这个数据集")
+    )
+    assert interpretation.is_dataset_overview is True
+    assert interpretation.intent_type == "followup"
+    assert interpretation.requires_ml is False
+
+
 class _FakeIntentPlannerModel:
-    def __init__(self, response_text: str):
-        self.response_text = response_text
-        self.last_messages = None
+    def __init__(self, response_texts: list[str] | tuple[str, ...] | str):
+        if isinstance(response_texts, str):
+            response_texts = [response_texts]
+        self.response_texts = list(response_texts)
+        self.last_messages = []
 
     def invoke(self, messages, **kwargs):
-        self.last_messages = messages
-        return SimpleNamespace(content=self.response_text)
+        self.last_messages.append(messages)
+        if not self.response_texts:
+            raise AssertionError("No more fake model responses configured")
+        return SimpleNamespace(content=self.response_texts.pop(0))
 
 
 def test_llm_structured_intent_is_used_when_valid(monkeypatch: pytest.MonkeyPatch):
     planner = _FakeIntentPlannerModel(
-        json.dumps(
-            {
-                "intent_type": "ml",
-                "requires_ml": True,
-                "requires_chart": False,
-                "requires_python_analysis": False,
-                "deliverables": ["metrics", "feature_importance"],
-                "reasoning_summary": "用户明确要求训练模型并查看指标。",
-                "suggested_plan": ["train a baseline model", "report metrics", "report feature importance"],
-            },
-            ensure_ascii=False,
-        )
+        [
+            json.dumps(
+                {
+                    "primary_intent": "ml",
+                    "confidence": "high",
+                    "reasoning_summary": "用户明确要求训练模型并查看指标。",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "intent_type": "ml",
+                    "requires_ml": True,
+                    "requires_chart": False,
+                    "requires_python_analysis": False,
+                    "deliverables": ["metrics", "feature_importance"],
+                    "reasoning_summary": "用户明确要求训练模型并查看指标。",
+                    "suggested_plan": ["train a baseline model", "report metrics", "report feature importance"],
+                },
+                ensure_ascii=False,
+            ),
+        ]
     )
     monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
 
@@ -162,25 +186,37 @@ def test_llm_structured_intent_is_used_when_valid(monkeypatch: pytest.MonkeyPatc
 
     assert interpretation.intent_type == "ml"
     assert interpretation.requires_ml is True
+    assert interpretation.confidence == "high"
+    assert interpretation.route_source == "llm_primary"
     assert interpretation.deliverables == ["metrics", "feature_importance"]
     assert any("report metrics" in step.lower() for step in interpretation.suggested_plan)
-    assert planner.last_messages is not None
+    assert len(planner.last_messages) == 2
 
 
 def test_vague_analysis_does_not_overtrigger_ml_even_if_llm_overcalls(monkeypatch: pytest.MonkeyPatch):
     planner = _FakeIntentPlannerModel(
-        json.dumps(
-            {
-                "intent_type": "ml",
-                "requires_ml": True,
-                "requires_chart": False,
-                "requires_python_analysis": False,
-                "deliverables": ["metrics"],
-                "reasoning_summary": "模型可能有帮助。",
-                "suggested_plan": ["train a model"],
-            },
-            ensure_ascii=False,
-        )
+        [
+            json.dumps(
+                {
+                    "primary_intent": "analysis",
+                    "confidence": "low",
+                    "reasoning_summary": "模型可能有帮助。",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "intent_type": "ml",
+                    "requires_ml": True,
+                    "requires_chart": False,
+                    "requires_python_analysis": False,
+                    "deliverables": ["metrics"],
+                    "reasoning_summary": "模型可能有帮助。",
+                    "suggested_plan": ["train a model"],
+                },
+                ensure_ascii=False,
+            ),
+        ]
     )
     monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
 
@@ -191,6 +227,8 @@ def test_vague_analysis_does_not_overtrigger_ml_even_if_llm_overcalls(monkeypatc
     assert interpretation.intent_type == "analysis"
     assert interpretation.requires_ml is False
     assert interpretation.requires_python_analysis is True
+    assert interpretation.route_source == "llm_with_guardrail"
+    assert "ml_overcall" in interpretation.conflict_flags
     assert any("analysis" in step.lower() or "inspect" in step.lower() for step in interpretation.suggested_plan)
 
 
@@ -205,3 +243,78 @@ def test_malformed_llm_output_falls_back_to_heuristics(monkeypatch: pytest.Monke
     assert interpretation.intent_type == "analysis"
     assert interpretation.requires_ml is False
     assert interpretation.requires_python_analysis is True
+    assert interpretation.route_source == "heuristic_fallback"
+
+
+def test_dataset_overview_conflict_only_marks_guardrail_when_llm_confidence_is_medium(monkeypatch: pytest.MonkeyPatch):
+    planner = _FakeIntentPlannerModel(
+        [
+            json.dumps(
+                {
+                    "primary_intent": "analysis",
+                    "confidence": "medium",
+                    "reasoning_summary": "用户可能想先看概览。",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "intent_type": "analysis",
+                    "is_dataset_overview": False,
+                    "is_follow_up": False,
+                    "requires_ml": False,
+                    "requires_chart": False,
+                    "requires_python_analysis": False,
+                    "deliverables": ["summary"],
+                    "reasoning_summary": "先做一般分析。",
+                    "suggested_plan": ["inspect the dataset"],
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+    monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
+
+    interpretation = interpret_request(RoutingContext(message="讲解一下这个数据集"))
+
+    assert interpretation.is_dataset_overview is False
+    assert interpretation.intent_type == "analysis"
+    assert interpretation.route_source == "llm_primary"
+    assert "dataset_overview_missed" in interpretation.conflict_flags
+
+
+def test_follow_up_conflict_low_confidence_uses_guardrail_override(monkeypatch: pytest.MonkeyPatch):
+    planner = _FakeIntentPlannerModel(
+        [
+            json.dumps(
+                {
+                    "primary_intent": "analysis",
+                    "confidence": "low",
+                    "reasoning_summary": "可能是新问题。",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "intent_type": "analysis",
+                    "is_dataset_overview": False,
+                    "is_follow_up": False,
+                    "requires_ml": False,
+                    "requires_chart": False,
+                    "requires_python_analysis": True,
+                    "deliverables": ["summary"],
+                    "reasoning_summary": "做一些新分析。",
+                    "suggested_plan": ["inspect the dataset"],
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+    monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
+
+    interpretation = interpret_request(RoutingContext(message="继续解释刚才那个结果"))
+
+    assert interpretation.intent_type == "followup"
+    assert interpretation.is_follow_up is True
+    assert interpretation.route_source == "llm_with_guardrail"
+    assert "follow_up_missed" in interpretation.conflict_flags

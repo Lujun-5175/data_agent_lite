@@ -8,6 +8,7 @@ import pandas as pd
 
 from src import audit_log, tools
 from src.audit_log import AuditLogger, read_recent_records
+from src.request_context import bind_request_context, set_route_diagnostics
 from src.tools import SafeExecutionError
 
 SCHEMA_FIELDS = [
@@ -184,3 +185,35 @@ def test_stats_execute_safe_execution_error_audits_as_error(tmp_path: Path, monk
     assert result == "错误：bad stats input"
     assert record["execution_status"] == "error"
     assert record["blocked_reason"] is None
+
+
+def test_tool_audit_includes_route_diagnostics(tmp_path: Path, monkeypatch):
+    audit_path = tmp_path / "audit.jsonl"
+    logger = AuditLogger(path=audit_path)
+
+    monkeypatch.setattr(tools, "get_audit_logger", lambda: logger)
+
+    with bind_request_context("req-1"):
+        set_route_diagnostics(
+            {
+                "final_intent": "analysis",
+                "confidence": "low",
+                "conflict_flags": ["ml_overcall"],
+                "route_source": "llm_with_guardrail",
+                "used_fallback": False,
+            }
+        )
+        tools._record_tool_audit(
+            tool_name="stats_execute",
+            dataset_id="dataset-1",
+            tool_args={"action": "latest"},
+            code=None,
+            execution_status="success",
+            start=0.0,
+            result="ok",
+        )
+
+    record = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+    assert record["extra"]["routing"]["final_intent"] == "analysis"
+    assert record["extra"]["routing"]["confidence"] == "low"
+    assert record["extra"]["routing"]["conflict_flags"] == ["ml_overcall"]

@@ -65,6 +65,12 @@ export function getFriendlyErrorMessage(code: string | undefined, fallbackMessag
       return '上游模型流式响应中断，系统已尝试恢复。请稍后重试。';
     case 'upstream_model_timeout':
       return '上游模型响应超时，请稍后重试。';
+    case 'upstream_model_connection_error':
+      return fallbackMessage;
+    case 'upstream_model_http_error':
+      return fallbackMessage;
+    case 'upstream_model_request_error':
+      return fallbackMessage;
     case 'tool_execution_timeout':
       return '分析执行超时，请缩小范围、指定列或先做更小的分组分析。';
     case 'history_compression_error':
@@ -74,7 +80,7 @@ export function getFriendlyErrorMessage(code: string | undefined, fallbackMessag
     case 'correlation_unsupported':
       return '当前版本暂不支持该类型相关性分析。';
     case 'internal_error':
-      return '服务器内部错误，请稍后重试。';
+      return fallbackMessage;
     default:
       return fallbackMessage;
   }

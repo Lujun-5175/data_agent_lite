@@ -1,14 +1,29 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+from src.chat_config import (
+    ANALYSIS_OPERATION_TERMS,
+    CHART_MARKERS,
+    DATASET_REQUIRED_WEIGHTS,
+    DELIVERABLE_TERM_MAP,
+    EXPLICIT_ML_WEIGHTS,
+    EXPLORATORY_ANALYSIS_TERMS,
+    FOLLOW_UP_MARKERS,
+    STATS_INTENT_WEIGHTS,
+    contains_any_term,
+    looks_like_dataset_overview_fallback,
+    normalize_message_text,
+)
 from src.intent_planner import IntentInterpretationPayload, plan_intent_with_llm
 from src.settings import SETTINGS
 
 logger = logging.getLogger(__name__)
+
+RouteConfidence = Literal["low", "medium", "high"]
+RouteSource = Literal["llm_primary", "llm_with_guardrail", "heuristic_fallback"]
 
 
 @dataclass(slots=True)
@@ -32,9 +47,14 @@ class RouteDecision:
 @dataclass(slots=True)
 class IntentInterpretation:
     intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"]
+    is_dataset_overview: bool
+    is_follow_up: bool
     requires_ml: bool
     requires_chart: bool
     requires_python_analysis: bool
+    confidence: RouteConfidence
+    conflict_flags: list[str]
+    route_source: RouteSource
     deliverables: list[str]
     reasoning_summary: str
     suggested_plan: list[str]
@@ -43,208 +63,8 @@ class IntentInterpretation:
         return asdict(self)
 
 
-DATASET_REQUIRED_WEIGHTS: dict[str, float] = {
-    "数据集": 1.6,
-    "数据": 1.2,
-    "这份数据": 1.6,
-    "当前数据": 1.6,
-    "csv": 1.4,
-    "上传": 1.2,
-    "分析": 1.0,
-    "相关性": 1.4,
-    "分组": 1.2,
-    "检验": 1.5,
-    "group by": 1.3,
-    "correlation": 1.4,
-    "t-test": 1.5,
-    "chi-square": 1.5,
-}
-
-STATS_INTENT_WEIGHTS: dict[str, float] = {
-    "describe": 1.3,
-    "summary": 1.2,
-    "描述统计": 1.6,
-    "分组汇总": 1.6,
-    "group by": 1.4,
-    "correlation": 1.4,
-    "相关性": 1.4,
-    "t-test": 1.8,
-    "t检验": 1.8,
-    "chi-square": 1.8,
-    "卡方": 1.8,
-    "anova": 1.8,
-    "显著性": 1.6,
-}
-
-ML_INTENT_WEIGHTS: dict[str, float] = {
-    "train model": 2.0,
-    "baseline model": 1.8,
-    "predict": 1.8,
-    "prediction": 1.2,
-    "classification": 1.8,
-    "regression": 1.8,
-    "logistic regression": 2.2,
-    "linear regression": 2.2,
-    "evaluate model": 1.8,
-    "accuracy": 0.8,
-    "feature importance": 1.8,
-    "训练模型": 2.0,
-    "预测": 1.8,
-    "预测一下": 1.2,
-    "分类": 1.6,
-    "回归": 1.6,
-    "逻辑回归": 2.2,
-    "线性回归": 2.2,
-    "模型评估": 1.8,
-    "特征重要性": 1.8,
-    "重要特征": 1.0,
-}
-
-EXPLICIT_ML_WEIGHTS: dict[str, float] = {
-    "train a model": 2.4,
-    "train a logistic regression model": 3.2,
-    "train a linear regression model": 3.2,
-    "train model": 2.4,
-    "build a model": 2.4,
-    "build model": 2.4,
-    "try a simple model": 3.0,
-    "simple model": 2.6,
-    "try a model": 2.2,
-    "fit model": 2.4,
-    "baseline model": 2.2,
-    "predict": 2.0,
-    "prediction": 1.8,
-    "classify": 2.2,
-    "classifier": 2.2,
-    "classification model": 2.2,
-    "logistic regression": 2.6,
-    "linear regression": 2.6,
-    "evaluate model": 2.2,
-    "model metrics": 2.6,
-    "metrics": 2.0,
-    "accuracy": 1.2,
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1": 1.0,
-    "auc": 1.0,
-    "roc auc": 1.2,
-    "feature importance": 2.8,
-    "coefficients": 1.6,
-    "coefficient": 1.6,
-    "train一个模型": 2.4,
-    "训练一个模型": 2.4,
-    "训练模型": 2.4,
-    "训练一个 baseline": 2.2,
-    "baseline model": 2.2,
-    "预测": 2.0,
-    "预测一下": 2.0,
-    "分类器": 2.2,
-    "分类模型": 2.2,
-    "逻辑回归": 2.6,
-    "线性回归": 2.6,
-    "模型评估": 2.2,
-    "模型指标": 2.6,
-    "准确率": 1.2,
-    "精确率": 1.0,
-    "召回率": 1.0,
-    "f1分数": 1.0,
-    "roc auc": 1.2,
-    "特征重要性": 2.8,
-    "重要特征": 2.0,
-}
-
-EXPLORATORY_ANALYSIS_TERMS: dict[str, float] = {
-    "analyze": 1.3,
-    "analysis": 1.2,
-    "explore": 1.2,
-    "exploration": 1.2,
-    "look at": 1.1,
-    "compare": 1.2,
-    "comparison": 1.1,
-    "factors": 1.2,
-    "drivers": 1.2,
-    "influence": 1.1,
-    "relationship": 1.1,
-    "distribution": 1.0,
-    "trend": 1.0,
-    "why": 0.8,
-    "reason": 0.8,
-    "summary": 1.0,
-    "describe": 1.0,
-    "概括": 1.0,
-    "分析": 1.2,
-    "探索": 1.2,
-    "看看": 0.8,
-    "比较": 1.2,
-    "因素": 1.2,
-    "驱动": 1.2,
-    "影响": 1.1,
-    "关系": 1.1,
-    "分布": 1.0,
-    "趋势": 1.0,
-    "原因": 0.8,
-}
-
-FOLLOW_UP_TERMS: tuple[str, ...] = (
-    "解释",
-    "刚才",
-    "之前",
-    "上一个",
-    "上个",
-    "这个结果",
-    "这结果",
-    "上面的结果",
-    "继续",
-    "follow up",
-    "follow-up",
-    "再次",
-    "again",
-    "reuse",
-)
-
-CHART_INTENT_TERMS: tuple[str, ...] = (
-    "画图",
-    "绘图",
-    "生成图",
-    "生成一个图",
-    "图表",
-    "柱状图",
-    "折线图",
-    "散点图",
-    "直方图",
-    "热力图",
-    "可视化",
-    "chart",
-    "plot",
-    "visualize",
-)
-
-DELIVERABLE_TERM_MAP: dict[str, tuple[str, ...]] = {
-    "summary": ("summary", "概括", "总结", "overview", "describe", "分析"),
-    "metrics": ("metrics", "model metrics", "模型指标", "accuracy", "precision", "recall", "f1", "auc", "roc auc"),
-    "feature_importance": ("feature importance", "特征重要性", "重要特征", "coefficients", "coefficient", "系数"),
-    "chart": CHART_INTENT_TERMS,
-    "table": ("table", "表格", "明细", "top", "top n", "前", "列表"),
-    "prediction": ("predict", "prediction", "预测", "预测一下", "forecast"),
-    "explanation": FOLLOW_UP_TERMS,
-}
-
-ANALYSIS_OPERATION_TERMS: dict[str, float] = {
-    "group": 0.4,
-    "compare": 0.4,
-    "test": 0.5,
-    "association": 0.5,
-    "significance": 0.5,
-    "分组": 0.4,
-    "比较": 0.4,
-    "检验": 0.5,
-    "关联": 0.5,
-    "显著": 0.5,
-}
-
-
 def _normalize(message: str) -> str:
-    return re.sub(r"\s+", " ", message.strip().lower())
+    return normalize_message_text(message)
 
 
 def _score_weighted_terms(message: str, weights: dict[str, float]) -> tuple[float, list[str]]:
@@ -281,7 +101,7 @@ def _operation_boost(message: str) -> tuple[float, list[str]]:
 
 
 def _contains_any(message: str, terms: tuple[str, ...]) -> bool:
-    return any(term.lower() in message for term in terms)
+    return contains_any_term(message, terms)
 
 
 def _collect_deliverables(message: str) -> list[str]:
@@ -305,11 +125,11 @@ def _analysis_score(message: str) -> tuple[float, list[str]]:
 
 
 def _follow_up_score(message: str) -> bool:
-    return _contains_any(message, FOLLOW_UP_TERMS)
+    return _contains_any(message, FOLLOW_UP_MARKERS)
 
 
 def _chart_score(message: str) -> bool:
-    return _contains_any(message, CHART_INTENT_TERMS)
+    return _contains_any(message, CHART_MARKERS)
 
 
 def _needs_training(message: str) -> bool:
@@ -444,6 +264,7 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
     analysis_score, analysis_reasons = _analysis_score(normalized)
     chart_requested = _chart_score(normalized)
     follow_up_requested = _follow_up_score(normalized)
+    dataset_overview_requested = looks_like_dataset_overview_fallback(normalized)
     stats_decision = decide_stats_intent(context)
     ml_decision = decide_ml_intent(context)
 
@@ -458,7 +279,9 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
 
     capability_count = sum(1 for flag in (requires_ml, requires_chart, requires_python_analysis) if flag)
 
-    if follow_up_requested and capability_count == 1:
+    if dataset_overview_requested:
+        intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"] = "followup"
+    elif follow_up_requested and capability_count == 1:
         intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"] = "followup"
     elif capability_count > 1:
         intent_type = "mixed"
@@ -482,6 +305,8 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
         reasoning_parts.append("chart request detected")
     if follow_up_requested:
         reasoning_parts.append("follow-up language detected")
+    if dataset_overview_requested:
+        reasoning_parts.append("dataset overview request detected")
     if follow_up_model_hint:
         reasoning_parts.append("follow-up model reuse hint detected")
     if not reasoning_parts:
@@ -511,9 +336,14 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
 
     return IntentInterpretation(
         intent_type=intent_type,
+        is_dataset_overview=dataset_overview_requested,
+        is_follow_up=follow_up_requested,
         requires_ml=requires_ml,
         requires_chart=requires_chart,
         requires_python_analysis=requires_python_analysis,
+        confidence="low",
+        conflict_flags=[],
+        route_source="heuristic_fallback",
         deliverables=deliverables,
         reasoning_summary="; ".join(reasoning_parts),
         suggested_plan=suggested_plan,
@@ -540,45 +370,52 @@ def _merge_llm_and_heuristic_intent(
     normalized = _normalize(context.message)
     explicit_ml_requested = _looks_like_explicit_ml_request(context)
     follow_up_requested = _follow_up_score(normalized)
-
-    requires_ml = fallback_intent.requires_ml or (llm_intent.requires_ml and explicit_ml_requested)
-    requires_chart = fallback_intent.requires_chart
-    requires_python_analysis = fallback_intent.requires_python_analysis or (
-        llm_intent.requires_python_analysis and not explicit_ml_requested and not requires_ml
+    dataset_overview_requested = looks_like_dataset_overview_fallback(normalized)
+    confidence = _normalize_confidence(llm_intent.confidence)
+    conflict_flags = _merge_conflict_flags(
+        _detect_conflict_flags(
+            llm_intent=llm_intent,
+            fallback_intent=fallback_intent,
+            explicit_ml_requested=explicit_ml_requested,
+            follow_up_requested=follow_up_requested,
+            dataset_overview_requested=dataset_overview_requested,
+        ),
+        llm_intent.conflict_flags,
     )
+    guardrail_override = confidence == "low" and bool(conflict_flags)
+    route_source: RouteSource = "llm_with_guardrail" if guardrail_override else "llm_primary"
 
-    deliverables = list(
-        dict.fromkeys(
-            [
-                *fallback_intent.deliverables,
-                *(deliverable for deliverable in llm_intent.deliverables if deliverable not in fallback_intent.deliverables),
-            ]
+    if guardrail_override:
+        return _build_guardrailed_interpretation(
+            llm_intent=llm_intent,
+            fallback_intent=fallback_intent,
+            conflict_flags=conflict_flags,
+            route_source=route_source,
         )
-    )
 
-    capability_count = sum(1 for flag in (requires_ml, requires_chart, requires_python_analysis) if flag)
-    if follow_up_requested and capability_count == 1:
-        intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"] = "followup"
-    elif capability_count > 1:
-        intent_type = "mixed"
-    elif requires_ml:
-        intent_type = "ml"
-    elif requires_chart:
-        intent_type = "chart"
-    elif requires_python_analysis:
-        intent_type = "analysis"
-    elif follow_up_requested:
-        intent_type = "followup"
-    else:
-        intent_type = "analysis"
+    is_dataset_overview = bool(llm_intent.is_dataset_overview)
+    is_follow_up = bool(llm_intent.is_follow_up)
+    requires_ml = bool(llm_intent.requires_ml)
+    requires_chart = bool(llm_intent.requires_chart)
+    requires_python_analysis = bool(llm_intent.requires_python_analysis or is_dataset_overview)
+    deliverables = list(dict.fromkeys(llm_intent.deliverables or fallback_intent.deliverables))
+
+    intent_type = _resolve_intent_type(
+        is_dataset_overview=is_dataset_overview,
+        is_follow_up=is_follow_up,
+        follow_up_requested=follow_up_requested,
+        requires_ml=requires_ml,
+        requires_chart=requires_chart,
+        requires_python_analysis=requires_python_analysis,
+    )
 
     reasoning_parts: list[str] = []
     if llm_intent.reasoning_summary.strip():
         reasoning_parts.append(f"LLM: {llm_intent.reasoning_summary.strip()}")
-    if fallback_intent.reasoning_summary.strip():
+    if conflict_flags and fallback_intent.reasoning_summary.strip():
         reasoning_parts.append(f"guardrail: {fallback_intent.reasoning_summary.strip()}")
-    if explicit_ml_requested:
-        reasoning_parts.append("explicit ML guardrail passed")
+    if conflict_flags:
+        reasoning_parts.append(f"conflicts: {', '.join(conflict_flags)}")
     if not reasoning_parts:
         reasoning_parts.append("defaulted to exploratory analysis")
 
@@ -593,12 +430,121 @@ def _merge_llm_and_heuristic_intent(
 
     return IntentInterpretation(
         intent_type=intent_type,
+        is_dataset_overview=is_dataset_overview,
+        is_follow_up=is_follow_up,
         requires_ml=requires_ml,
         requires_chart=requires_chart,
         requires_python_analysis=requires_python_analysis,
+        confidence=confidence,
+        conflict_flags=conflict_flags,
+        route_source=route_source,
         deliverables=deliverables,
         reasoning_summary="; ".join(reasoning_parts),
         suggested_plan=suggested_plan,
+    )
+
+
+def _normalize_confidence(value: str | None) -> RouteConfidence:
+    if value == "high":
+        return "high"
+    if value == "low":
+        return "low"
+    return "medium"
+
+
+def _merge_conflict_flags(*values: list[str]) -> list[str]:
+    merged: list[str] = []
+    for group in values:
+        for value in group:
+            token = value.strip().lower()
+            if token and token not in merged:
+                merged.append(token)
+    return merged
+
+
+def _detect_conflict_flags(
+    *,
+    llm_intent: IntentInterpretationPayload,
+    fallback_intent: IntentInterpretation,
+    explicit_ml_requested: bool,
+    follow_up_requested: bool,
+    dataset_overview_requested: bool,
+) -> list[str]:
+    conflict_flags: list[str] = []
+    if dataset_overview_requested and not llm_intent.is_dataset_overview:
+        conflict_flags.append("dataset_overview_missed")
+    if follow_up_requested and not llm_intent.is_follow_up:
+        conflict_flags.append("follow_up_missed")
+    if explicit_ml_requested and not llm_intent.requires_ml:
+        conflict_flags.append("explicit_ml_missed")
+    if fallback_intent.requires_chart and not llm_intent.requires_chart:
+        conflict_flags.append("chart_request_missed")
+    if llm_intent.requires_ml and not explicit_ml_requested and fallback_intent.intent_type in {"analysis", "followup"}:
+        conflict_flags.append("ml_overcall")
+    return conflict_flags
+
+
+def _resolve_intent_type(
+    *,
+    is_dataset_overview: bool,
+    is_follow_up: bool,
+    follow_up_requested: bool,
+    requires_ml: bool,
+    requires_chart: bool,
+    requires_python_analysis: bool,
+) -> Literal["analysis", "ml", "chart", "mixed", "followup"]:
+    capability_count = sum(1 for flag in (requires_ml, requires_chart, requires_python_analysis) if flag)
+    if is_dataset_overview:
+        return "followup"
+    if is_follow_up and capability_count == 1:
+        return "followup"
+    if capability_count > 1:
+        return "mixed"
+    if requires_ml:
+        return "ml"
+    if requires_chart:
+        return "chart"
+    if requires_python_analysis:
+        return "analysis"
+    if follow_up_requested:
+        return "followup"
+    return "analysis"
+
+
+def _build_guardrailed_interpretation(
+    *,
+    llm_intent: IntentInterpretationPayload,
+    fallback_intent: IntentInterpretation,
+    conflict_flags: list[str],
+    route_source: RouteSource,
+) -> IntentInterpretation:
+    reasoning_parts: list[str] = []
+    if llm_intent.reasoning_summary.strip():
+        reasoning_parts.append(f"LLM: {llm_intent.reasoning_summary.strip()}")
+    if fallback_intent.reasoning_summary.strip():
+        reasoning_parts.append(f"guardrail override: {fallback_intent.reasoning_summary.strip()}")
+    if conflict_flags:
+        reasoning_parts.append(f"conflicts: {', '.join(conflict_flags)}")
+    return IntentInterpretation(
+        intent_type=fallback_intent.intent_type,
+        is_dataset_overview=fallback_intent.is_dataset_overview,
+        is_follow_up=fallback_intent.is_follow_up,
+        requires_ml=fallback_intent.requires_ml,
+        requires_chart=fallback_intent.requires_chart,
+        requires_python_analysis=fallback_intent.requires_python_analysis,
+        confidence="low",
+        conflict_flags=conflict_flags,
+        route_source=route_source,
+        deliverables=fallback_intent.deliverables,
+        reasoning_summary="; ".join(reasoning_parts) if reasoning_parts else fallback_intent.reasoning_summary,
+        suggested_plan=_merge_suggested_plan(
+            fallback_intent.suggested_plan,
+            requires_ml=fallback_intent.requires_ml,
+            requires_chart=fallback_intent.requires_chart,
+            requires_python_analysis=fallback_intent.requires_python_analysis,
+            deliverables=fallback_intent.deliverables,
+            follow_up_requested=fallback_intent.is_follow_up,
+        ),
     )
 
 

@@ -38,6 +38,12 @@ describe('api config', () => {
     const { getFriendlyErrorMessage } = await import('./api');
     expect(getFriendlyErrorMessage('file_too_large', 'fallback')).toContain('50MB');
     expect(getFriendlyErrorMessage('agent_recursion_limit', 'fallback')).toContain('拆得更具体');
+    expect(getFriendlyErrorMessage('internal_error', '模型调用失败：quota exceeded')).toBe(
+      '模型调用失败：quota exceeded'
+    );
+    expect(getFriendlyErrorMessage('upstream_model_connection_error', '连接失败：connection refused')).toBe(
+      '连接失败：connection refused'
+    );
     expect(getFriendlyErrorMessage(undefined, 'fallback')).toBe('fallback');
   });
 });

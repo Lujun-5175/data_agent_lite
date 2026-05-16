@@ -28,6 +28,7 @@ from src.eval.prediction_adapter import (
 )
 from src.eval.runner import load_eval_cases
 from src.eval.schema import EvalCase, EvalPrediction
+from src.result_normalizer import normalize_result_payload, summarize_tool_output
 from src.routing_rules import RoutingContext, interpret_request
 from src.sse import extract_text_from_chunk
 
@@ -495,13 +496,6 @@ def _build_result_payload(
 
     if final_answer:
         payload["final_answer_preview"] = _truncate_text(final_answer, 400)
-    if tool_call and tool_call.output is not None:
-        output_text = _stringify_output(tool_call.output)
-        if output_text:
-            payload.setdefault("tool_output_preview", _truncate_text(output_text, 400))
-            payload.setdefault("output_size_bytes", len(output_text.encode("utf-8")))
-    elif audit_record is not None:
-        payload.setdefault("output_size_bytes", int(audit_record.get("output_size_bytes") or 0))
 
     if execution_status and "execution_status" not in payload:
         payload["execution_status"] = execution_status
@@ -514,36 +508,21 @@ def _summarize_audit_result(record: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(extra, dict):
         return None
     payload = extra.get("result")
-    if isinstance(payload, dict):
-        return _normalize_result_payload(payload)
-    return None
+    if payload is None:
+        return None
+    normalized = normalize_result_payload(payload)
+    if isinstance(normalized, dict):
+        return normalized
+    if isinstance(normalized, list):
+        structured: dict[str, Any] = {"items": normalized, "row_count": len(normalized)}
+        if normalized and all(isinstance(item, dict) for item in normalized):
+            structured["rows"] = normalized
+        return structured
+    return {"value": normalized}
 
 
 def _summarize_tool_output(output: Any) -> dict[str, Any] | None:
-    text = _stringify_output(output)
-    if text is None:
-        return None
-    parsed = _parse_structured_output(text)
-    if parsed is None:
-        return {
-            "tool_output_preview": _truncate_text(text, 400),
-            "output_size_bytes": len(text.encode("utf-8")),
-        }
-    if isinstance(parsed, dict):
-        payload = _normalize_result_payload(parsed)
-    elif isinstance(parsed, list):
-        payload = {
-            "items": _normalize_result_payload(parsed),
-            "row_count": len(parsed),
-        }
-        if parsed and all(isinstance(item, dict) for item in parsed):
-            payload["rows"] = _normalize_result_payload(parsed)
-    else:
-        payload = {"tool_output_preview": _truncate_text(text, 400)}
-
-    payload.setdefault("tool_output_preview", _truncate_text(text, 400))
-    payload.setdefault("output_size_bytes", len(text.encode("utf-8")))
-    return payload
+    return summarize_tool_output(output)
 
 
 def _normalize_result_payload(value: Any) -> Any:
