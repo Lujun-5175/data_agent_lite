@@ -11,7 +11,7 @@ backend_path = str(BACKEND_DIR)
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-from src import server, tools
+from src import chat_service, intent_planner, server, tools
 from src.data_manager import cleanup_dataset_artifacts, dataset_store
 from src.server import app
 
@@ -34,6 +34,9 @@ def isolated_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _cleanup_all_datasets()
     monkeypatch.setattr(server, "TEMP_DATA_DIR", temp_data_dir)
     monkeypatch.setattr(server, "IMAGES_DIR", images_dir)
+    monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", None)
+    monkeypatch.setattr(intent_planner, "get_intent_planner_model", lambda: intent_planner.INTENT_PLANNER_MODEL)
+    monkeypatch.setattr(chat_service, "get_intent_planner_model", lambda: intent_planner.INTENT_PLANNER_MODEL)
     tools.EXECUTOR.image_dir = images_dir
     yield
     _cleanup_all_datasets()

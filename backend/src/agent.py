@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from typing import Any
 
 from dotenv import load_dotenv
@@ -13,6 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from src.data_manager import get_data_context_summary, get_dataset
+from src.result_types import get_artifact_repository
 from src.routing_rules import (
     RoutingContext,
     decide_dataset_required,
@@ -157,10 +157,6 @@ def _format_dataset_context_summary(summary: dict[str, Any]) -> str:
         f"预处理提示: {_format_columns(preprocessing_log, 3)}\n"
         f"关键 warning: {_format_columns(warnings, 3)}"
     )
-
-def _normalize_text(message: str) -> str:
-    return re.sub(r"\s+", " ", message.strip().lower())
-
 
 def get_dataset_required_decision(
     message: str,
@@ -322,15 +318,18 @@ def dataset_context_middleware(request) -> str:
             dataset_columns = [column["name"] for column in dataset.columns if "name" in column]
             data_context = _format_dataset_context_summary(get_data_context_summary(dataset_id))
             dataset_scope = f"当前数据集 dataset_id: {dataset_id}，分析基于 {dataset.analysis_basis}。"
+            latest_artifact = get_artifact_repository().get_latest(dataset_id)
         else:
             data_context = "当前未选择数据集。普通聊天可以继续进行；如果用户需要分析具体数据，请先上传 CSV 文件。"
             dataset_scope = "当前没有可用数据集。普通聊天可直接回答，数据分析需先上传 CSV。"
+            latest_artifact = None
 
         interpretation = interpret_request(
             RoutingContext(
                 message=latest_user_message,
                 dataset_columns=dataset_columns,
                 prior_analysis_active=bool(dataset_id),
+                latest_artifact=latest_artifact,
             ),
             use_llm=False,
         )
@@ -341,7 +340,7 @@ def dataset_context_middleware(request) -> str:
         )
         logger.debug("stats intent decision: %s", stats_decision.to_dict())
         logger.debug("request interpretation: %s", interpretation.to_dict())
-        if interpretation.is_dataset_overview:
+        if interpretation.intent_type == "dataset_overview":
             route_hint = "这是数据集概览请求。优先基于当前 schema/profile 直接讲解，不要进入多余的工具循环。"
         elif interpretation.intent_type == "ml":
             route_hint = (

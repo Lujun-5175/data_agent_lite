@@ -64,6 +64,23 @@ def test_profile_dataframe_missing_and_uniqueness_metadata():
     assert isinstance(contract["sample_values"], list)
 
 
+def test_profile_dataframe_emits_semantic_evidence_and_shape_summaries():
+    profile = profile_dataframe(_fixture_df())
+    columns = {item["column_name"]: item for item in profile["columns"]}
+
+    customer_id = columns["customer_id"]
+    signup_date = columns["signup_date"]
+    notes = columns["notes"]
+
+    assert "identifier_like_signal" in customer_id["semantic_evidence"]
+    assert customer_id["value_shape_summary"]["code_like"] > 0
+    assert "id_like_code" in customer_id["pattern_hints"]
+    assert "datetime_parse_ratio_high" in signup_date["semantic_evidence"]
+    assert "date_token_like" in signup_date["pattern_hints"]
+    assert any(token in notes["semantic_evidence"] for token in ("text_name_hint", "long_average_text"))
+    assert isinstance(customer_id["cardinality_metrics"]["normalized_entropy"], float)
+
+
 def test_prepare_analysis_dataframe_keeps_raw_unchanged_and_records_steps():
     raw = _fixture_df()
     raw_before = raw.copy(deep=True)

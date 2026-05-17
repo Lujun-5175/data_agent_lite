@@ -6,6 +6,8 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
+from src.repositories import ArtifactRepository
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -30,7 +32,7 @@ def build_artifact(
 
 
 @dataclass(slots=True)
-class ArtifactRegistry:
+class InMemoryArtifactRepository:
     _latest_by_dataset: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
     _artifacts_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
@@ -76,4 +78,16 @@ class ArtifactRegistry:
                     self._artifacts_by_id.pop(artifact_id, None)
 
 
-artifact_registry = ArtifactRegistry()
+_artifact_repository: ArtifactRepository = InMemoryArtifactRepository()
+
+
+def get_artifact_repository() -> ArtifactRepository:
+    return _artifact_repository
+
+
+def set_artifact_repository(repository: ArtifactRepository) -> None:
+    global _artifact_repository
+    _artifact_repository = repository
+
+
+artifact_registry = get_artifact_repository()

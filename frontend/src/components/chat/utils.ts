@@ -1,5 +1,5 @@
 import type { ServerUploadResponse, UploadedDataset } from '../../types/data';
-import type { ChatMessage } from './types';
+import type { ChatMessage, RouteInfo } from './types';
 
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -52,6 +52,54 @@ export function extractStreamText(payload: Record<string, unknown>) {
 export function extractImageUrl(payload: Record<string, unknown>) {
   const imageUrl = payload.image_url;
   return typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl : '';
+}
+
+export function normalizeRouteInfo(payload: Record<string, unknown>): RouteInfo | null {
+  const intentType = typeof payload.intent_type === 'string' ? payload.intent_type : '';
+  const confidence = typeof payload.confidence === 'string' ? payload.confidence : 'medium';
+  const routeSource = typeof payload.route_source === 'string' ? payload.route_source : '';
+  if (!intentType || !routeSource) return null;
+
+  return {
+    intentType,
+    confidence,
+    routeSource,
+    conflictFlags: Array.isArray(payload.conflict_flags)
+      ? payload.conflict_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    suggestedPlan: Array.isArray(payload.suggested_plan)
+      ? payload.suggested_plan.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    requiresMl: payload.requires_ml === true,
+    requiresChart: payload.requires_chart === true,
+    requiresPythonAnalysis: payload.requires_python_analysis === true,
+    isFollowUp: payload.is_follow_up === true,
+  };
+}
+
+export function summarizeRouteInfo(routeInfo: RouteInfo) {
+  const intentLabelMap: Record<string, string> = {
+    analysis: '分析',
+    ml: '建模',
+    chart: '图表',
+    mixed: '混合',
+    followup: '续问',
+    dataset_overview: '概览',
+  };
+  const confidenceLabelMap: Record<string, string> = {
+    low: '低置信度',
+    medium: '中置信度',
+    high: '高置信度',
+  };
+  const routeSourceLabelMap: Record<string, string> = {
+    llm_primary: 'LLM 主判定',
+    llm_with_guardrail: 'LLM + Guardrail',
+    heuristic_fallback: '规则回退',
+  };
+  const intentLabel = intentLabelMap[routeInfo.intentType] ?? routeInfo.intentType;
+  const confidenceLabel = confidenceLabelMap[routeInfo.confidence] ?? routeInfo.confidence;
+  const routeSourceLabel = routeSourceLabelMap[routeInfo.routeSource] ?? routeInfo.routeSource;
+  return `${intentLabel} · ${confidenceLabel} · ${routeSourceLabel}`;
 }
 
 export function buildMessageHistory(messages: ChatMessage[]) {

@@ -160,3 +160,38 @@ def test_python_inter_error_audit_extra_contains_structured_error(tmp_path: Path
     assert structured_error["safe_to_retry"] is True
     assert structured_error["missing_column"] == "salse"
     assert structured_error["suggestions"][0]["suggestion"] == "sales"
+
+
+def test_classify_type_mismatch_includes_semantic_context_in_repair_prompt():
+    structured = classify_execution_error(
+        "TypeError: column 'sales' must be numeric before plotting",
+        available_columns=["sales", "region"],
+        semantic_column_types={"sales": "categorical", "region": "categorical"},
+        tool_name="fig_inter",
+        tool_action="bar",
+    )
+
+    assert structured.error_type == "type_mismatch"
+    assert structured.retryable is True
+    assert structured.safe_to_retry is True
+    assert structured.repair_prompt is not None
+    assert "tool_name: fig_inter" in structured.repair_prompt
+    assert "semantic_column_types: sales:categorical, region:categorical" in structured.repair_prompt
+
+
+def test_classify_invalid_target_surfaces_candidates_without_retry():
+    structured = classify_execution_error(
+        "目标列不存在: churn_flag",
+        available_columns=["churn", "contract", "tenure"],
+        target_candidates=["churn", "contract"],
+        feature_candidates=["tenure"],
+        tool_name="ml_execute",
+        tool_action="train",
+    )
+
+    assert structured.error_type == "invalid_target"
+    assert structured.retryable is False
+    assert structured.safe_to_retry is False
+    assert structured.target_candidates == ["churn", "contract"]
+    assert structured.repair_prompt is not None
+    assert "target_candidates: churn, contract" in structured.repair_prompt

@@ -38,7 +38,7 @@ from src.errors import AppError
 from src.request_context import get_route_diagnostics
 from src.ml_helpers import BaselineMLService, MLHelperError
 from src.self_correction import build_repair_prompt, classify_execution_error
-from src.result_types import artifact_registry, build_artifact
+from src.result_types import build_artifact, get_artifact_repository
 from src.settings import SETTINGS
 
 logger = logging.getLogger(__name__)
@@ -464,7 +464,7 @@ class ProfileHelperAPI:
 
     def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
         dataset_id = self._require_dataset_id()
-        artifact = artifact_registry.get_latest(dataset_id, artifact_type=artifact_type)
+        artifact = get_artifact_repository().get_latest(dataset_id, artifact_type=artifact_type)
         if artifact is None:
             raise SafeExecutionError("当前还没有可复用的数据理解结果。")
         return artifact
@@ -558,7 +558,7 @@ class StatsHelperAPI:
         self._dataset_id = dataset_id
 
     def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
-        artifact = artifact_registry.get_latest(self._dataset_id, artifact_type=artifact_type)
+        artifact = get_artifact_repository().get_latest(self._dataset_id, artifact_type=artifact_type)
         if artifact is None:
             raise SafeExecutionError("当前还没有可复用的统计结果。请先执行一次统计分析。")
         return artifact
@@ -592,7 +592,7 @@ class StatsHelperAPI:
             payload={"stats_type": "describe_numeric", "columns": selected_columns, "rows": rows},
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def describe_categorical(self, columns: list[str] | None = None) -> dict[str, Any]:
         selected_columns, warnings = self._resolve_categorical_columns(columns)
@@ -626,7 +626,7 @@ class StatsHelperAPI:
             payload={"stats_type": "describe_categorical", "columns": selected_columns, "rows": rows},
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def group_summary(
         self,
@@ -731,7 +731,7 @@ class StatsHelperAPI:
             },
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def correlation(self, columns: list[str] | None = None, top_k: int = 10) -> dict[str, Any]:
         if top_k <= 0:
@@ -779,7 +779,7 @@ class StatsHelperAPI:
             },
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def t_test(self, value_col: str, group_col: str, group_a: Any, group_b: Any) -> dict[str, Any]:
         self._validate_columns([value_col, group_col])
@@ -818,7 +818,7 @@ class StatsHelperAPI:
             },
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def chi_square(self, col_a: str, col_b: str) -> dict[str, Any]:
         self._validate_columns([col_a, col_b])
@@ -845,7 +845,7 @@ class StatsHelperAPI:
             },
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def anova(self, value_col: str, group_col: str) -> dict[str, Any]:
         self._validate_columns([value_col, group_col])
@@ -889,7 +889,7 @@ class StatsHelperAPI:
             },
             warnings=warnings,
         )
-        return artifact_registry.register(self._dataset_id, artifact)
+        return get_artifact_repository().register(self._dataset_id, artifact)
 
     def _resolve_numeric_columns(self, columns: list[str] | None) -> tuple[list[str], list[str]]:
         warnings: list[str] = []
@@ -1529,21 +1529,72 @@ def _available_columns_for_self_correction(df: pd.DataFrame | None) -> list[str]
     return [str(column) for column in df.columns]
 
 
+def _semantic_column_types_for_self_correction(dataset_id: str | None) -> dict[str, str] | None:
+    if not dataset_id:
+        return None
+    try:
+        schema_profile = get_schema_profile(dataset_id)
+    except Exception:
+        return None
+    columns = schema_profile.get("columns", []) if isinstance(schema_profile, dict) else []
+    semantic_types: dict[str, str] = {}
+    for column in columns:
+        if not isinstance(column, dict):
+            continue
+        name = column.get("column_name")
+        semantic_type = column.get("semantic_type")
+        if isinstance(name, str) and isinstance(semantic_type, str):
+            semantic_types[name] = semantic_type
+    return semantic_types or None
+
+
+def _model_candidates_for_self_correction(dataset_id: str | None) -> tuple[list[str], list[str]]:
+    if not dataset_id:
+        return [], []
+    try:
+        model_prep_plan = get_model_prep_plan(dataset_id)
+    except Exception:
+        return [], []
+    target = model_prep_plan.get("target") if isinstance(model_prep_plan, dict) else None
+    candidate_features = model_prep_plan.get("candidate_features", []) if isinstance(model_prep_plan, dict) else []
+    target_candidates = [target] if isinstance(target, str) and target.strip() else []
+    feature_candidates = [
+        str(item) for item in candidate_features if isinstance(candidate_features, list) and isinstance(item, str)
+    ]
+    return target_candidates, feature_candidates
+
+
 def _structured_error_extra(
     error: BaseException | str,
     *,
+    dataset_id: str | None = None,
     available_columns: list[str] | None = None,
     original_code: str | None = None,
+    tool_name: str | None = None,
+    tool_action: str | None = None,
 ) -> dict[str, Any] | None:
     if not SETTINGS.self_correction_enabled:
         return None
 
-    structured_error = classify_execution_error(error, available_columns=available_columns)
+    semantic_column_types = _semantic_column_types_for_self_correction(dataset_id)
+    target_candidates, feature_candidates = _model_candidates_for_self_correction(dataset_id)
+    structured_error = classify_execution_error(
+        error,
+        available_columns=available_columns,
+        semantic_column_types=semantic_column_types,
+        target_candidates=target_candidates,
+        feature_candidates=feature_candidates,
+        tool_name=tool_name,
+        tool_action=tool_action,
+    )
     if original_code is not None:
         structured_error.repair_prompt = build_repair_prompt(
             original_code=original_code,
             structured_error=structured_error,
             available_columns=available_columns,
+            semantic_column_types=semantic_column_types,
+            tool_name=tool_name,
+            tool_action=tool_action,
         )
 
     payload: dict[str, Any] = {
@@ -1551,6 +1602,8 @@ def _structured_error_extra(
         "retryable": structured_error.retryable,
         "safe_to_retry": structured_error.safe_to_retry,
     }
+    if structured_error.related_name is not None:
+        payload["related_name"] = structured_error.related_name
     if structured_error.missing_column is not None:
         payload["missing_column"] = structured_error.missing_column
     if structured_error.suggestions:
@@ -1562,6 +1615,10 @@ def _structured_error_extra(
             }
             for suggestion in structured_error.suggestions[: SETTINGS.self_correction_max_suggestions]
         ]
+    if structured_error.target_candidates:
+        payload["target_candidates"] = structured_error.target_candidates
+    if structured_error.feature_candidates:
+        payload["feature_candidates"] = structured_error.feature_candidates
     return {"structured_error": payload}
 
 
@@ -1648,7 +1705,13 @@ def python_inter(py_code: str) -> str:
                 start=start,
                 result=result,
                 error_message=result,
-                extra=_structured_error_extra(result, available_columns=available_columns, original_code=py_code),
+                extra=_structured_error_extra(
+                    result,
+                    dataset_id=dataset_id,
+                    available_columns=available_columns,
+                    original_code=py_code,
+                    tool_name="python_inter",
+                ),
             )
             return result
         _record_tool_audit(
@@ -1676,7 +1739,13 @@ def python_inter(py_code: str) -> str:
             start=start,
             result=result,
             error_message=exc.message,
-            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                original_code=py_code,
+                tool_name="python_inter",
+            ),
         )
         return result
     except SafeExecutionError as exc:
@@ -1691,7 +1760,13 @@ def python_inter(py_code: str) -> str:
             result=result,
             error_message=str(exc),
             blocked_reason=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                original_code=py_code,
+                tool_name="python_inter",
+            ),
         )
         return result
     except Exception as exc:
@@ -1703,7 +1778,13 @@ def python_inter(py_code: str) -> str:
             execution_status="error",
             start=start,
             error_message=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                original_code=py_code,
+                tool_name="python_inter",
+            ),
         )
         raise
 
@@ -1753,7 +1834,13 @@ def fig_inter(py_code: str, fname: str) -> str:
                 start=start,
                 result=result,
                 error_message=result,
-                extra=_structured_error_extra(result, available_columns=available_columns, original_code=py_code),
+                extra=_structured_error_extra(
+                    result,
+                    dataset_id=dataset_id,
+                    available_columns=available_columns,
+                    original_code=py_code,
+                    tool_name="fig_inter",
+                ),
             )
             return result
         _record_tool_audit(
@@ -1781,7 +1868,13 @@ def fig_inter(py_code: str, fname: str) -> str:
             start=start,
             result=result,
             error_message=exc.message,
-            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                original_code=py_code,
+                tool_name="fig_inter",
+            ),
         )
         return result
     except SafeExecutionError as exc:
@@ -1796,7 +1889,13 @@ def fig_inter(py_code: str, fname: str) -> str:
             result=result,
             error_message=str(exc),
             blocked_reason=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                original_code=py_code,
+                tool_name="fig_inter",
+            ),
         )
         return result
     except Exception as exc:
@@ -1808,7 +1907,13 @@ def fig_inter(py_code: str, fname: str) -> str:
             execution_status="error",
             start=start,
             error_message=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns, original_code=py_code),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                original_code=py_code,
+                tool_name="fig_inter",
+            ),
         )
         raise
     finally:
@@ -2009,7 +2114,13 @@ def ml_execute(
             start=start,
             result=result,
             error_message=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                tool_name="ml_execute",
+                tool_action=action,
+            ),
         )
         return result
     except Exception as exc:
@@ -2021,7 +2132,13 @@ def ml_execute(
             execution_status="error",
             start=start,
             error_message=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                tool_name="ml_execute",
+                tool_action=action,
+            ),
         )
         raise
 
@@ -2185,7 +2302,13 @@ def stats_execute(
             start=start,
             result=result,
             error_message=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                tool_name="stats_execute",
+                tool_action=action,
+            ),
         )
         return result
     except Exception as exc:
@@ -2197,6 +2320,12 @@ def stats_execute(
             execution_status="error",
             start=start,
             error_message=str(exc),
-            extra=_structured_error_extra(exc, available_columns=available_columns),
+            extra=_structured_error_extra(
+                exc,
+                dataset_id=dataset_id,
+                available_columns=available_columns,
+                tool_name="stats_execute",
+                tool_action=action,
+            ),
         )
         raise

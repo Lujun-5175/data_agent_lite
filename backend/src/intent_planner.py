@@ -4,11 +4,13 @@ import json
 import logging
 import os
 import re
-from typing import Any, Literal
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_deepseek import ChatDeepSeek
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
+
+from src.routing_models import ConfidenceBand, RoutingCapability, RoutingDecision, RoutingPrimaryMode
 
 logger = logging.getLogger(__name__)
 
@@ -17,61 +19,30 @@ DEFAULT_INTENT_PLANNER_MODEL = os.getenv(
     "INTENT_PLANNER_MODEL",
     os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
 )
+IntentInterpretationPayload = RoutingDecision
 
-
-class IntentInterpretationPayload(BaseModel):
-    intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"]
-    is_dataset_overview: bool = False
-    is_follow_up: bool = False
-    requires_ml: bool = False
-    requires_chart: bool = False
-    requires_python_analysis: bool = False
-    confidence: Literal["low", "medium", "high"] = "medium"
-    conflict_flags: list[str] = Field(default_factory=list)
-    route_source: Literal["llm_primary", "llm_with_guardrail", "heuristic_fallback"] = "llm_primary"
-    deliverables: list[str] = Field(default_factory=list)
-    reasoning_summary: str = ""
-    suggested_plan: list[str] = Field(default_factory=list)
-
-
-class CoarseIntentPayload(BaseModel):
-    primary_intent: Literal["dataset_overview", "followup", "analysis", "chart", "ml", "mixed"]
-    confidence: Literal["low", "medium", "high"] = "medium"
-    reasoning_summary: str = ""
-
-
-COARSE_INTENT_SYSTEM_PROMPT = (
-    "你是 Data Agent 的粗粒度路由解释器。"
-    "你的任务不是执行分析，而是先把用户请求归类到一个主路由。"
-    "只输出 JSON，不要输出 markdown、解释文本或多余前后缀。"
-    "必须输出这些字段：primary_intent, confidence, reasoning_summary。"
-    "primary_intent 只能是 dataset_overview, followup, analysis, chart, ml, mixed 之一。"
-    "confidence 只能是 low, medium, high 之一。"
-    "判定规则："
-    "1) 如果用户主要是在要求讲解、介绍、概览当前数据集，而不是立即执行深入分析，优先判定为 dataset_overview。"
-    "2) 如果用户明显在引用上一个结果、上一个模型、刚才的图或之前的结论，优先判定为 followup。"
-    "3) 只有当用户明确要求训练、建模、预测、模型评估、特征重要性，且目标是从训练好的模型中得到结果时，才判定为 ml。"
-    "4) 只是在分析、比较、分组、探索、描述、看关系或驱动因素时，优先判定为 analysis 或 mixed，不要直接判定成 ml。"
-    "5) 如果同时需要分析和建模，判定为 mixed。"
-    "6) 如果核心目标是画图、可视化、图表，可判定为 chart；若同时需要明显分析步骤，也可判定 mixed。"
-)
-
-DETAIL_INTENT_SYSTEM_PROMPT = (
-    "你是 Data Agent 的细粒度路由解释器。"
-    "你的任务不是执行分析，而是根据给定主路由补全结构化执行意图。"
+ROUTING_SYSTEM_PROMPT = (
+    "你是 Data Agent 的结构化路由器。"
+    "你的任务不是执行分析，而是把用户请求路由成一个稳定的结构化决策。"
     "只输出 JSON，不要输出 markdown、解释文本或多余前后缀。"
     "必须输出这些字段："
-    "intent_type, is_dataset_overview, is_follow_up, requires_ml, requires_chart, requires_python_analysis, "
-    "deliverables, reasoning_summary, suggested_plan。"
-    "intent_type 只能是 analysis, ml, chart, mixed, followup 之一。"
-    "判定规则："
-    "1) dataset_overview 场景下，is_dataset_overview 设为 true，intent_type 通常设为 followup。"
-    "2) 只有当用户明确要求训练、建模、预测、模型评估、特征重要性时，才把 requires_ml 设为 true。"
-    "3) 只是在分析、比较、分组、探索、描述、看关系或驱动因素时，优先判定为 analysis 或 mixed，不要直接判定成 ml。"
-    "4) 如果同时需要分析和建模，判定为 mixed，并给出先 analysis 后 ml 的 suggested_plan。"
-    "5) 如果用户明显在引用上一个结果、上一个模型、刚才的图或之前的结论，is_follow_up 设为 true，通常 intent_type 判定为 followup。"
-    "6) 如果用户要求画图、可视化、图表，requires_chart 设为 true。"
-    "deliverables 只能使用这些值或其子集：summary, metrics, feature_importance, chart, table, prediction, explanation。"
+    "primary_mode, confidence_score, confidence_band, needs_dataset, needs_tool_execution, "
+    "needs_artifact_context, requested_capabilities, ambiguity_flags, reasoning_summary, execution_plan。"
+    "primary_mode 只能是 direct_answer, dataset_overview, analysis, visualization, modeling, artifact_followup, mixed, clarification。"
+    "requested_capabilities 只能使用这些值或其子集："
+    "summarize_dataset, inspect_schema, reuse_prior_artifact, group_analysis, stat_test, python_analysis, "
+    "chart_generation, train_model, evaluate_model, feature_importance, direct_answer。"
+    "confidence_score 是 0 到 1 之间的小数。"
+    "confidence_band 只能是 low, medium, high。"
+    "判定原则："
+    "1) 普通问答、概念解释、无需数据与工具时，优先 direct_answer。"
+    "2) 用户主要要求讲解当前数据集、字段、预处理与推荐方向时，优先 dataset_overview。"
+    "3) 用户明显引用上一个结果、模型、图表或 artifact 时，优先 artifact_followup，并设置 needs_artifact_context=true。"
+    "4) 用户要求统计分析、分组比较、探索关系、过滤聚合时，优先 analysis。"
+    "5) 用户要求画图或可视化时，优先 visualization；若同时包含明显分析步骤，可判 mixed。"
+    "6) 只有当用户明确要求训练模型、预测、模型评估、特征重要性时，才优先 modeling。"
+    "7) 若信息明显不足以安全路由，使用 clarification。"
+    "8) execution_plan 用简短步骤描述后续应做什么。"
 )
 
 
@@ -140,7 +111,7 @@ def _normalize_deliverables(values: list[str] | None) -> list[str]:
     return normalized
 
 
-def _normalize_plan(values: list[str] | None) -> list[str]:
+def _normalize_string_list(values: Any) -> list[str]:
     if not values:
         return []
     if isinstance(values, str):
@@ -173,40 +144,267 @@ def _normalize_conflict_flags(values: list[str] | None) -> list[str]:
     return normalized
 
 
+def _normalize_primary_mode(value: Any) -> RoutingPrimaryMode:
+    normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    mapping: dict[str, RoutingPrimaryMode] = {
+        "direct_answer": "direct_answer",
+        "dataset_overview": "dataset_overview",
+        "analysis": "analysis",
+        "visualization": "visualization",
+        "chart": "visualization",
+        "modeling": "modeling",
+        "ml": "modeling",
+        "artifact_followup": "artifact_followup",
+        "followup": "artifact_followup",
+        "follow_up": "artifact_followup",
+        "mixed": "mixed",
+        "clarification": "clarification",
+    }
+    return mapping.get(normalized, "analysis")
+
+
+def _normalize_capabilities(values: Any) -> list[RoutingCapability]:
+    if not values:
+        return []
+    if isinstance(values, str):
+        values = [values]
+    normalized: list[RoutingCapability] = []
+    mapping: dict[str, RoutingCapability] = {
+        "summarize_dataset": "summarize_dataset",
+        "inspect_schema": "inspect_schema",
+        "reuse_prior_artifact": "reuse_prior_artifact",
+        "group_analysis": "group_analysis",
+        "stat_test": "stat_test",
+        "python_analysis": "python_analysis",
+        "chart_generation": "chart_generation",
+        "train_model": "train_model",
+        "evaluate_model": "evaluate_model",
+        "feature_importance": "feature_importance",
+        "direct_answer": "direct_answer",
+    }
+    for value in values:
+        token = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+        capability = mapping.get(token)
+        if capability and capability not in normalized:
+            normalized.append(capability)
+    return normalized
+
+
+def _confidence_band_from_score(score: float) -> ConfidenceBand:
+    if score < 0.45:
+        return "low"
+    if score < 0.75:
+        return "medium"
+    return "high"
+
+
+def _confidence_score_from_band(band: str | None) -> float:
+    if band == "low":
+        return 0.3
+    if band == "high":
+        return 0.85
+    return 0.6
+
+
+def _normalize_confidence_score(value: Any, *, fallback_band: str | None = None) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = _confidence_score_from_band(fallback_band)
+    return max(0.0, min(1.0, score))
+
+
+def _normalize_confidence_band(value: Any, *, fallback_score: float | None = None) -> ConfidenceBand:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"low", "medium", "high"}:
+        return normalized  # type: ignore[return-value]
+    score = fallback_score if isinstance(fallback_score, float) else 0.6
+    return _confidence_band_from_score(score)
+
+
+def _legacy_intent_to_primary_mode(intent_type: Any) -> RoutingPrimaryMode:
+    normalized = str(intent_type or "").strip().lower()
+    mapping: dict[str, RoutingPrimaryMode] = {
+        "dataset_overview": "dataset_overview",
+        "followup": "artifact_followup",
+        "analysis": "analysis",
+        "chart": "visualization",
+        "ml": "modeling",
+        "mixed": "mixed",
+    }
+    return mapping.get(normalized, "analysis")
+
+
+def _derive_requested_capabilities(payload: dict[str, Any], primary_mode: RoutingPrimaryMode) -> list[RoutingCapability]:
+    raw_capabilities = _normalize_capabilities(payload.get("requested_capabilities"))
+    if raw_capabilities:
+        return raw_capabilities
+
+    capabilities: list[RoutingCapability] = []
+    if primary_mode == "direct_answer":
+        capabilities.append("direct_answer")
+    if primary_mode == "dataset_overview":
+        capabilities.extend(["summarize_dataset", "inspect_schema"])
+    if primary_mode == "artifact_followup":
+        capabilities.append("reuse_prior_artifact")
+    if bool(payload.get("requires_python_analysis")) or primary_mode in {"analysis", "mixed"}:
+        capabilities.append("python_analysis")
+    if primary_mode in {"analysis", "mixed"}:
+        capabilities.append("group_analysis")
+    if bool(payload.get("requires_chart")) or primary_mode == "visualization":
+        capabilities.append("chart_generation")
+    if bool(payload.get("requires_ml")) or primary_mode == "modeling":
+        capabilities.append("train_model")
+    deliverables = _normalize_deliverables(payload.get("deliverables"))
+    if "metrics" in deliverables:
+        capabilities.append("evaluate_model")
+    if "feature_importance" in deliverables:
+        capabilities.append("feature_importance")
+    return list(dict.fromkeys(capabilities))
+
+
+def _derive_compat_fields(
+    *,
+    primary_mode: RoutingPrimaryMode,
+    capabilities: list[RoutingCapability],
+    deliverables: list[str],
+    needs_artifact_context: bool,
+) -> dict[str, Any]:
+    requires_ml = any(capability in {"train_model", "evaluate_model", "feature_importance"} for capability in capabilities)
+    requires_chart = "chart_generation" in capabilities
+    requires_python_analysis = any(
+        capability in {"group_analysis", "stat_test", "python_analysis"} for capability in capabilities
+    )
+    is_dataset_overview = primary_mode == "dataset_overview"
+    is_follow_up = primary_mode == "artifact_followup" or needs_artifact_context
+
+    if primary_mode == "dataset_overview":
+        intent_type = "dataset_overview"
+    elif primary_mode == "artifact_followup":
+        intent_type = "followup"
+    elif primary_mode == "visualization":
+        intent_type = "chart"
+    elif primary_mode == "modeling":
+        intent_type = "ml"
+    elif primary_mode == "mixed":
+        intent_type = "mixed"
+    else:
+        intent_type = "analysis"
+
+    resolved_deliverables = list(deliverables)
+    if "evaluate_model" in capabilities and "metrics" not in resolved_deliverables:
+        resolved_deliverables.append("metrics")
+    if "feature_importance" in capabilities and "feature_importance" not in resolved_deliverables:
+        resolved_deliverables.append("feature_importance")
+    if "chart_generation" in capabilities and "chart" not in resolved_deliverables:
+        resolved_deliverables.append("chart")
+    if any(capability in {"summarize_dataset", "group_analysis", "python_analysis", "direct_answer"} for capability in capabilities):
+        if "summary" not in resolved_deliverables:
+            resolved_deliverables.append("summary")
+
+    return {
+        "intent_type": intent_type,
+        "is_dataset_overview": is_dataset_overview,
+        "is_follow_up": is_follow_up,
+        "requires_ml": requires_ml,
+        "requires_chart": requires_chart,
+        "requires_python_analysis": requires_python_analysis,
+        "deliverables": resolved_deliverables,
+    }
+
+
+def _derive_needs_dataset(primary_mode: RoutingPrimaryMode, capabilities: list[RoutingCapability]) -> bool:
+    if primary_mode in {"dataset_overview", "analysis", "visualization", "modeling", "artifact_followup", "mixed"}:
+        return True
+    return any(
+        capability in {
+            "summarize_dataset",
+            "inspect_schema",
+            "reuse_prior_artifact",
+            "group_analysis",
+            "stat_test",
+            "python_analysis",
+            "chart_generation",
+            "train_model",
+            "evaluate_model",
+            "feature_importance",
+        }
+        for capability in capabilities
+    )
+
+
+def _derive_needs_tool_execution(primary_mode: RoutingPrimaryMode, capabilities: list[RoutingCapability]) -> bool:
+    if primary_mode in {"analysis", "visualization", "modeling", "mixed"}:
+        return True
+    return any(
+        capability in {
+            "group_analysis",
+            "stat_test",
+            "python_analysis",
+            "chart_generation",
+            "train_model",
+            "evaluate_model",
+            "feature_importance",
+        }
+        for capability in capabilities
+    )
+
+
 def _coerce_payload(payload: dict[str, Any]) -> IntentInterpretationPayload | None:
+    primary_mode = _normalize_primary_mode(payload.get("primary_mode") or _legacy_intent_to_primary_mode(payload.get("intent_type")))
+    capabilities = _derive_requested_capabilities(payload, primary_mode)
+    deliverables = _normalize_deliverables(payload.get("deliverables"))
+    needs_artifact_context = bool(payload.get("needs_artifact_context") or payload.get("is_follow_up") or primary_mode == "artifact_followup")
+    compatibility = _derive_compat_fields(
+        primary_mode=primary_mode,
+        capabilities=capabilities,
+        deliverables=deliverables,
+        needs_artifact_context=needs_artifact_context,
+    )
+    confidence_band = _normalize_confidence_band(
+        payload.get("confidence_band") or payload.get("confidence"),
+        fallback_score=None,
+    )
+    confidence_score = _normalize_confidence_score(
+        payload.get("confidence_score"),
+        fallback_band=confidence_band,
+    )
+    confidence_band = _normalize_confidence_band(
+        payload.get("confidence_band") or payload.get("confidence"),
+        fallback_score=confidence_score,
+    )
+    ambiguity_flags = _normalize_conflict_flags(payload.get("ambiguity_flags") or payload.get("conflict_flags"))
+    execution_plan = _normalize_string_list(payload.get("execution_plan") or payload.get("suggested_plan"))
     try:
         return IntentInterpretationPayload.model_validate(
             {
-                "intent_type": payload.get("intent_type"),
-                "is_dataset_overview": payload.get("is_dataset_overview", False),
-                "is_follow_up": payload.get("is_follow_up", False),
-                "requires_ml": payload.get("requires_ml", False),
-                "requires_chart": payload.get("requires_chart", False),
-                "requires_python_analysis": payload.get("requires_python_analysis", False),
-                "confidence": payload.get("confidence", "medium"),
-                "conflict_flags": _normalize_conflict_flags(payload.get("conflict_flags")),
-                "route_source": payload.get("route_source", "llm_primary"),
-                "deliverables": _normalize_deliverables(payload.get("deliverables")),
+                "primary_mode": primary_mode,
+                "confidence_score": confidence_score,
+                "confidence_band": confidence_band,
+                "needs_dataset": bool(payload.get("needs_dataset")) if payload.get("needs_dataset") is not None else _derive_needs_dataset(primary_mode, capabilities),
+                "needs_tool_execution": bool(payload.get("needs_tool_execution")) if payload.get("needs_tool_execution") is not None else _derive_needs_tool_execution(primary_mode, capabilities),
+                "needs_artifact_context": needs_artifact_context,
+                "requested_capabilities": capabilities,
+                "ambiguity_flags": ambiguity_flags,
+                "guardrail_actions": _normalize_string_list(payload.get("guardrail_actions")),
+                "fallback_reasons": _normalize_string_list(payload.get("fallback_reasons")),
                 "reasoning_summary": str(payload.get("reasoning_summary", "")).strip(),
-                "suggested_plan": _normalize_plan(payload.get("suggested_plan")),
+                "execution_plan": execution_plan,
+                "intent_type": payload.get("intent_type") or compatibility["intent_type"],
+                "is_dataset_overview": bool(payload.get("is_dataset_overview")) or compatibility["is_dataset_overview"],
+                "is_follow_up": bool(payload.get("is_follow_up")) or compatibility["is_follow_up"],
+                "requires_ml": bool(payload.get("requires_ml")) or compatibility["requires_ml"],
+                "requires_chart": bool(payload.get("requires_chart")) or compatibility["requires_chart"],
+                "requires_python_analysis": bool(payload.get("requires_python_analysis")) or compatibility["requires_python_analysis"],
+                "deliverables": list(dict.fromkeys(deliverables or compatibility["deliverables"])),
+                "confidence": confidence_band,
+                "conflict_flags": ambiguity_flags,
+                "route_source": payload.get("route_source", "llm_primary"),
+                "suggested_plan": execution_plan,
             }
         )
     except ValidationError as exc:
         logger.debug("intent planner payload validation failed: %s", exc)
-        return None
-
-
-def _coerce_coarse_payload(payload: dict[str, Any]) -> CoarseIntentPayload | None:
-    try:
-        return CoarseIntentPayload.model_validate(
-            {
-                "primary_intent": payload.get("primary_intent"),
-                "confidence": payload.get("confidence", "medium"),
-                "reasoning_summary": str(payload.get("reasoning_summary", "")).strip(),
-            }
-        )
-    except ValidationError as exc:
-        logger.debug("coarse intent planner payload validation failed: %s", exc)
         return None
 
 
@@ -277,46 +475,15 @@ def plan_intent_with_llm(
         return None
     resolved_dataset_columns = dataset_columns or []
 
-    coarse_raw = _invoke_model_json(
+    routing_raw = _invoke_model_json(
         model,
         message=message,
         dataset_columns=resolved_dataset_columns,
         prior_analysis_active=prior_analysis_active,
-        system_prompt=COARSE_INTENT_SYSTEM_PROMPT,
+        system_prompt=ROUTING_SYSTEM_PROMPT,
     )
-    if coarse_raw is None:
+    if routing_raw is None:
         return None
-    coarse_payload = _coerce_coarse_payload(coarse_raw)
-    if coarse_payload is None:
-        return None
-
-    detail_raw = _invoke_model_json(
-        model,
-        message=message,
-        dataset_columns=resolved_dataset_columns,
-        prior_analysis_active=prior_analysis_active,
-        system_prompt=DETAIL_INTENT_SYSTEM_PROMPT,
-        extra_payload={
-            "coarse_intent": coarse_payload.primary_intent,
-            "coarse_confidence": coarse_payload.confidence,
-            "coarse_reasoning_summary": coarse_payload.reasoning_summary,
-        },
-    )
-    if detail_raw is None:
-        return None
-
-    detail_raw.setdefault("confidence", coarse_payload.confidence)
-    detail_raw.setdefault("conflict_flags", [])
-    detail_raw.setdefault("route_source", "llm_primary")
-    if coarse_payload.primary_intent == "dataset_overview":
-        detail_raw["is_dataset_overview"] = True
-        detail_raw.setdefault("intent_type", "followup")
-    elif coarse_payload.primary_intent == "followup":
-        detail_raw["is_follow_up"] = True
-        detail_raw.setdefault("intent_type", "followup")
-    elif coarse_payload.primary_intent in {"analysis", "chart", "ml", "mixed"}:
-        detail_raw.setdefault("intent_type", coarse_payload.primary_intent)
-    if not detail_raw.get("reasoning_summary") and coarse_payload.reasoning_summary:
-        detail_raw["reasoning_summary"] = coarse_payload.reasoning_summary
-
-    return _coerce_payload(detail_raw)
+    routing_raw.setdefault("route_source", "llm_primary")
+    routing_raw.setdefault("ambiguity_flags", routing_raw.get("conflict_flags", []))
+    return _coerce_payload(routing_raw)

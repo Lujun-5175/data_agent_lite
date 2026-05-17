@@ -22,8 +22,11 @@ class StructuredExecutionError(BaseModel):
     error_type: str
     raw_message: str
     retryable: bool
+    related_name: str | None = None
     missing_column: str | None = None
     suggestions: list[RepairSuggestion] = Field(default_factory=list)
+    target_candidates: list[str] = Field(default_factory=list)
+    feature_candidates: list[str] = Field(default_factory=list)
     safe_to_retry: bool = False
     repair_prompt: str | None = None
 
@@ -36,6 +39,9 @@ _NOT_IN_INDEX_RE = re.compile(r"\[\s*['\"](?P<column>[^'\"]+)['\"]\s*\]\s+not in
 _NOT_IN_INDEX_QUOTED_RE = re.compile(r"['\"](?P<column>[^'\"]+)['\"]\s+not in index", re.IGNORECASE)
 _COLUMN_NOT_FOUND_RE = re.compile(r"(?:列不存在|排序列不存在)\s*[:：]\s*['\"]?(?P<column>[^'\"\n\r]+?)['\"]?(?:\s|$)", re.IGNORECASE)
 _NAME_ERROR_RE = re.compile(r"name\s+['\"](?P<name>[^'\"]+)['\"]\s+is\s+not\s+defined", re.IGNORECASE)
+_TARGET_ERROR_RE = re.compile(r"目标列(?:不存在|不适合建模)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
+_FEATURE_ERROR_RE = re.compile(r"特征列(?:不存在)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
+_GROUP_ERROR_RE = re.compile(r"(?:group_by|group col|group_col|分组列)\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
 
 
 def extract_missing_column(error_message: str) -> str | None:
@@ -104,12 +110,18 @@ def classify_execution_error(
     error: BaseException | str,
     *,
     available_columns: list[str] | None = None,
+    semantic_column_types: dict[str, str] | None = None,
+    target_candidates: list[str] | None = None,
+    feature_candidates: list[str] | None = None,
+    tool_name: str | None = None,
+    tool_action: str | None = None,
 ) -> StructuredExecutionError:
     raw_message = _coerce_message(error)
     normalized_message = _strip_tool_prefixes(raw_message)
     class_name = error.__class__.__name__ if isinstance(error, BaseException) else None
 
     missing_column = extract_missing_column(normalized_message)
+    related_name = _extract_related_name(normalized_message)
     suggestions: list[RepairSuggestion] = []
     retryable = False
     safe_to_retry = False
@@ -129,12 +141,39 @@ def classify_execution_error(
             name_hint = _extract_name_hint(normalized_message)
             if name_hint:
                 suggestions = suggest_similar_columns(name_hint, available_columns)
+                related_name = name_hint
+    elif _looks_like_invalid_target(normalized_message):
+        error_type = "invalid_target"
+        if available_columns and related_name:
+            suggestions = suggest_similar_columns(related_name, available_columns)
+    elif _looks_like_invalid_feature_set(normalized_message):
+        error_type = "invalid_feature_set"
+    elif _looks_like_invalid_groupby(normalized_message):
+        error_type = "invalid_groupby"
+        retryable = True
+        if available_columns and related_name:
+            suggestions = suggest_similar_columns(related_name, available_columns)
+            safe_to_retry = bool(suggestions)
     elif missing_column is not None:
         error_type = "missing_column"
         retryable = True
         if available_columns:
             suggestions = suggest_similar_columns(missing_column, available_columns)
             safe_to_retry = bool(suggestions)
+    elif _looks_like_empty_result(normalized_message):
+        error_type = "empty_result"
+    elif _looks_like_type_mismatch(normalized_message):
+        error_type = "type_mismatch"
+        retryable = True
+        if available_columns and related_name:
+            suggestions = suggest_similar_columns(related_name, available_columns)
+        safe_to_retry = bool(suggestions) or bool(semantic_column_types)
+    elif _looks_like_plotting_failure(normalized_message):
+        error_type = "plotting_failure"
+        retryable = True
+        if available_columns and related_name:
+            suggestions = suggest_similar_columns(related_name, available_columns)
+        safe_to_retry = bool(suggestions) or "same size" in normalized_message.lower()
     elif _looks_like_safe_execution_blocked(class_name, normalized_message):
         error_type = "safe_execution_blocked"
     else:
@@ -144,14 +183,20 @@ def classify_execution_error(
         error_type=error_type,
         raw_message=raw_message,
         retryable=retryable,
+        related_name=related_name,
         missing_column=missing_column,
         suggestions=suggestions,
+        target_candidates=list(target_candidates or []),
+        feature_candidates=list(feature_candidates or []),
         safe_to_retry=safe_to_retry,
     )
     structured.repair_prompt = build_repair_prompt(
         original_code=None,
         structured_error=structured,
         available_columns=available_columns,
+        semantic_column_types=semantic_column_types,
+        tool_name=tool_name,
+        tool_action=tool_action,
     )
     return structured
 
@@ -161,12 +206,21 @@ def build_repair_prompt(
     original_code: str | None,
     structured_error: StructuredExecutionError,
     available_columns: list[str] | None = None,
+    semantic_column_types: dict[str, str] | None = None,
+    tool_name: str | None = None,
+    tool_action: str | None = None,
 ) -> str:
     lines = [
         "请修复上一次执行失败的代码，尽量只做最小改动。",
         f"error_type: {structured_error.error_type}",
         f"raw_message: {structured_error.raw_message}",
     ]
+    if tool_name:
+        lines.append(f"tool_name: {tool_name}")
+    if tool_action:
+        lines.append(f"tool_action: {tool_action}")
+    if structured_error.related_name:
+        lines.append(f"related_name: {structured_error.related_name}")
     if structured_error.missing_column:
         lines.append(f"missing_column: {structured_error.missing_column}")
     if structured_error.suggestions:
@@ -176,6 +230,13 @@ def build_repair_prompt(
         lines.append(f"suggested_columns: {suggestion_text}")
     if available_columns:
         lines.append(f"available_columns: {', '.join(str(column) for column in available_columns)}")
+    if semantic_column_types:
+        compact_semantic_types = ", ".join(f"{name}:{kind}" for name, kind in semantic_column_types.items())
+        lines.append(f"semantic_column_types: {compact_semantic_types}")
+    if structured_error.target_candidates:
+        lines.append(f"target_candidates: {', '.join(structured_error.target_candidates)}")
+    if structured_error.feature_candidates:
+        lines.append(f"feature_candidates: {', '.join(structured_error.feature_candidates)}")
     lines.append("不要使用 import、文件访问、eval、exec 或任何被禁止的 API。")
     if original_code:
         lines.append("original_code:")
@@ -238,6 +299,95 @@ def _extract_name_hint(message: str) -> str | None:
         return None
     name = match.group("name").strip()
     return name or None
+
+
+def _extract_related_name(message: str) -> str | None:
+    for pattern in (_TARGET_ERROR_RE, _FEATURE_ERROR_RE, _GROUP_ERROR_RE, _NAME_ERROR_RE):
+        match = pattern.search(message)
+        if not match:
+            continue
+        name = match.groupdict().get("name")
+        if isinstance(name, str):
+            stripped = name.strip()
+            if stripped:
+                return stripped
+    return None
+
+
+def _looks_like_type_mismatch(message: str) -> bool:
+    lowered = message.casefold()
+    return any(
+        needle in lowered
+        for needle in (
+            "could not convert",
+            "unsupported operand type",
+            "must be numeric",
+            "dtype",
+            "is not numeric",
+            "cannot use",
+        )
+    )
+
+
+def _looks_like_empty_result(message: str) -> bool:
+    lowered = message.casefold()
+    return any(
+        needle in lowered
+        for needle in (
+            "结果为空",
+            "empty result",
+            "no rows",
+            "empty dataframe",
+            "after filtering",
+        )
+    )
+
+
+def _looks_like_invalid_groupby(message: str) -> bool:
+    lowered = message.casefold()
+    return any(needle in lowered for needle in ("group_by", "group col", "group_col", "分组列"))
+
+
+def _looks_like_plotting_failure(message: str) -> bool:
+    lowered = message.casefold()
+    return any(
+        needle in lowered
+        for needle in (
+            "绘图",
+            "plot",
+            "chart",
+            "could not interpret value",
+            "same size",
+            "x and y",
+        )
+    )
+
+
+def _looks_like_invalid_target(message: str) -> bool:
+    lowered = message.casefold()
+    return any(
+        needle in lowered
+        for needle in (
+            "目标列",
+            "positive_label",
+            "正类",
+            "target",
+            "不适合建模",
+        )
+    )
+
+
+def _looks_like_invalid_feature_set(message: str) -> bool:
+    lowered = message.casefold()
+    return any(
+        needle in lowered
+        for needle in (
+            "特征列",
+            "可用特征列",
+            "feature",
+            "没有可用于建模的特征列",
+        )
+    )
 
 
 def _looks_like_safe_execution_blocked(class_name: str | None, message: str) -> bool:

@@ -15,7 +15,8 @@ import pandas as pd
 from src.dataset_recommendations import generate_recommended_prompts
 from src.errors import AppError
 from src.preprocessing import ModelPrepPlanError, plan_model_preprocessing, prepare_analysis_dataframe
-from src.result_types import artifact_registry, build_artifact
+from src.repositories import DatasetRepository
+from src.result_types import build_artifact, get_artifact_repository
 from src.schema_profile import profile_dataframe
 from src.settings import SETTINGS
 
@@ -118,7 +119,7 @@ class Dataset:
 
 
 @dataclass(slots=True)
-class DatasetStore:
+class InMemoryDatasetRepository:
     _datasets: dict[str, Dataset] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
     _preprocess_events: dict[str, Event] = field(default_factory=dict)
@@ -142,7 +143,7 @@ class DatasetStore:
             payload={k: v for k, v in profile_payload.items() if k != "warnings"},
             warnings=list(profile_payload.get("warnings", [])),
         )
-        artifact_registry.register(dataset_id, profile_artifact)
+        get_artifact_repository().register(dataset_id, profile_artifact)
         dataset = Dataset(
             dataset_id=dataset_id,
             raw_df=original_df.copy(deep=True),
@@ -253,7 +254,7 @@ class DatasetStore:
                     raise DatasetNotFoundError("数据集不存在或已被删除。")
 
                 if not dataset.preprocessed:
-                    artifact_registry.register(dataset.dataset_id, preprocess_artifact)
+                    get_artifact_repository().register(dataset.dataset_id, preprocess_artifact)
                     dataset.analysis_df = analysis_df
                     dataset.analysis_preprocess_artifact = preprocess_artifact
                     dataset.preview = _build_preview(dataset.working_df)
@@ -306,7 +307,7 @@ class DatasetStore:
             payload=plan_payload,
             warnings=warnings,
         )
-        artifact_registry.register(dataset.dataset_id, plan_artifact)
+        get_artifact_repository().register(dataset.dataset_id, plan_artifact)
         dataset.model_prep_plan_artifact = plan_artifact
         return plan_artifact
 
@@ -327,7 +328,19 @@ class DatasetStore:
         return list(dataset.recommended_prompts)
 
 
-dataset_store = DatasetStore()
+_dataset_repository: DatasetRepository = InMemoryDatasetRepository()
+
+
+def get_dataset_repository() -> DatasetRepository:
+    return _dataset_repository
+
+
+def set_dataset_repository(repository: DatasetRepository) -> None:
+    global _dataset_repository
+    _dataset_repository = repository
+
+
+dataset_store = get_dataset_repository()
 
 
 def _build_preprocessing_log(preprocess_artifact: dict[str, Any]) -> list[str]:
@@ -372,7 +385,7 @@ def load_csv_file(file_path: Path, original_filename: str) -> Dataset:
     for encoding in SUPPORTED_ENCODINGS:
         try:
             raw_df = pd.read_csv(resolved_path, encoding=encoding)
-            dataset = dataset_store.create_dataset(
+            dataset = get_dataset_repository().create_dataset(
                 original_df=raw_df,
                 original_filename=original_filename,
                 stored_path=resolved_path,
@@ -396,20 +409,20 @@ def load_csv_file(file_path: Path, original_filename: str) -> Dataset:
 
 
 def get_dataset(dataset_id: str) -> Dataset:
-    return dataset_store.get_dataset(dataset_id)
+    return get_dataset_repository().get_dataset(dataset_id)
 
 
 def get_dataframe(dataset_id: str) -> pd.DataFrame:
-    return dataset_store.ensure_preprocessed(dataset_id).working_df
+    return get_dataset_repository().ensure_preprocessed(dataset_id).working_df
 
 
 def get_data_preview(dataset_id: str, n: int = PREVIEW_ROW_COUNT) -> list[dict[str, Any]]:
-    dataset = dataset_store.ensure_preprocessed(dataset_id)
+    dataset = get_dataset_repository().ensure_preprocessed(dataset_id)
     return dataset.working_df.head(n).replace({np.nan: None}).to_dict(orient="records")
 
 
 def get_data_info(dataset_id: str) -> str:
-    dataset = dataset_store.ensure_preprocessed(dataset_id)
+    dataset = get_dataset_repository().ensure_preprocessed(dataset_id)
     buffer = io.StringIO()
     dataset.working_df.info(buf=buffer)
     preprocessing_lines = "\n".join(f"- {entry}" for entry in dataset.preprocessing_log)
@@ -427,7 +440,7 @@ def get_data_info(dataset_id: str) -> str:
 
 
 def get_data_context_summary(dataset_id: str) -> dict[str, Any]:
-    dataset = dataset_store.ensure_preprocessed(dataset_id)
+    dataset = get_dataset_repository().ensure_preprocessed(dataset_id)
     numeric_columns = [column["name"] for column in dataset.columns if column.get("type") == "numerical"]
     categorical_columns = [column["name"] for column in dataset.columns if column.get("type") != "numerical"]
     schema_warnings = dataset.schema_profile_artifact.get("warnings", [])
@@ -475,11 +488,11 @@ def _build_dataset_summary(dataset: Dataset) -> dict[str, Any]:
 
 
 def get_schema_profile(dataset_id: str) -> dict[str, Any]:
-    return dataset_store.get_schema_profile(dataset_id)
+    return get_dataset_repository().get_schema_profile(dataset_id)
 
 
 def get_analysis_preprocess_artifact(dataset_id: str) -> dict[str, Any]:
-    return dataset_store.get_analysis_preprocess_artifact(dataset_id)
+    return get_dataset_repository().get_analysis_preprocess_artifact(dataset_id)
 
 
 def get_model_prep_plan(
@@ -488,15 +501,15 @@ def get_model_prep_plan(
     target: str | None = None,
     features: list[str] | None = None,
 ) -> dict[str, Any]:
-    return dataset_store.get_or_create_model_prep_plan(dataset_id, target=target, features=features)
+    return get_dataset_repository().get_or_create_model_prep_plan(dataset_id, target=target, features=features)
 
 
 def get_dataset_recommended_prompts(dataset_id: str) -> list[str]:
-    return dataset_store.get_or_create_recommended_prompts(dataset_id)
+    return get_dataset_repository().get_or_create_recommended_prompts(dataset_id)
 
 
 def calculate_correlation(dataset_id: str, col1: str, col2: str) -> dict[str, Any]:
-    dataset = dataset_store.ensure_preprocessed(dataset_id)
+    dataset = get_dataset_repository().ensure_preprocessed(dataset_id)
     df = dataset.working_df
 
     if col1 not in df.columns or col2 not in df.columns:
@@ -555,13 +568,13 @@ def _interpret_correlation(value: float) -> str:
 
 
 def cleanup_dataset_artifacts(dataset_id: str) -> None:
-    dataset = dataset_store.delete_dataset(dataset_id)
-    artifact_registry.clear_dataset(dataset.dataset_id)
+    dataset = get_dataset_repository().delete_dataset(dataset_id)
+    get_artifact_repository().clear_dataset(dataset.dataset_id)
     dataset.cleanup_artifacts()
 
 
 def register_dataset_generated_image(dataset_id: str, filename: str) -> None:
-    dataset_store.register_generated_image(dataset_id, filename)
+    get_dataset_repository().register_generated_image(dataset_id, filename)
 
 
 def cleanup_expired_artifacts(

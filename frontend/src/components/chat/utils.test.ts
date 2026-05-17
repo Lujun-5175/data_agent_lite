@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildMessageHistory, normalizeUploadedDataset, parseSseBlocks, parseSseEventBlock } from './utils';
+import {
+  buildMessageHistory,
+  normalizeRouteInfo,
+  normalizeUploadedDataset,
+  parseSseBlocks,
+  parseSseEventBlock,
+  summarizeRouteInfo,
+} from './utils';
 
 describe('chat utils', () => {
   it('normalizes uploaded dataset payloads', () => {
@@ -48,5 +55,23 @@ describe('chat utils', () => {
       eventType: 'message_chunk',
       payload: { content: 'hi' },
     });
+  });
+
+  it('normalizes route info payloads', () => {
+    const routeInfo = normalizeRouteInfo({
+      intent_type: 'dataset_overview',
+      confidence: 'medium',
+      route_source: 'llm_primary',
+      conflict_flags: ['dataset_overview_missed'],
+      suggested_plan: ['inspect schema', 'summarize dataset'],
+      requires_ml: false,
+      requires_chart: false,
+      requires_python_analysis: true,
+      is_follow_up: false,
+    });
+
+    expect(routeInfo).not.toBeNull();
+    expect(routeInfo?.intentType).toBe('dataset_overview');
+    expect(summarizeRouteInfo(routeInfo!)).toContain('概览');
   });
 });

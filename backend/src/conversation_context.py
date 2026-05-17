@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from src.result_types import artifact_registry
+from src.result_types import get_artifact_repository
 from src.settings import SETTINGS
 
 
@@ -44,7 +44,7 @@ def _looks_like_user_goal(message: str) -> bool:
 def _build_artifact_reference(dataset_id: str | None) -> dict[str, Any] | None:
     if not dataset_id:
         return None
-    latest_artifact = artifact_registry.get_latest(dataset_id)
+    latest_artifact = get_artifact_repository().get_latest(dataset_id)
     if not isinstance(latest_artifact, dict):
         return None
     return {

@@ -11,6 +11,7 @@ from src.routing_rules import (
     decide_dataset_required,
     decide_ml_intent,
     decide_stats_intent,
+    interpret_request_decision,
     interpret_request,
 )
 
@@ -90,7 +91,8 @@ def test_stats_query_should_not_trigger_ml():
 
 def test_interpretation_explicit_ml_request():
     interpretation = interpret_request(
-        RoutingContext(message="train a logistic regression model for churn")
+        RoutingContext(message="train a logistic regression model for churn"),
+        use_llm=False,
     )
     assert interpretation.intent_type == "ml"
     assert interpretation.requires_ml is True
@@ -101,7 +103,8 @@ def test_interpretation_explicit_ml_request():
 
 def test_interpretation_exploratory_analysis_request():
     interpretation = interpret_request(
-        RoutingContext(message="look at churn by contract type")
+        RoutingContext(message="look at churn by contract type"),
+        use_llm=False,
     )
     assert interpretation.intent_type == "analysis"
     assert interpretation.requires_ml is False
@@ -111,7 +114,8 @@ def test_interpretation_exploratory_analysis_request():
 
 def test_interpretation_mixed_workflow_request():
     interpretation = interpret_request(
-        RoutingContext(message="analyze churn drivers and, if useful, try a simple model")
+        RoutingContext(message="analyze churn drivers and, if useful, try a simple model"),
+        use_llm=False,
     )
     assert interpretation.intent_type == "mixed"
     assert interpretation.requires_ml is True
@@ -122,7 +126,8 @@ def test_interpretation_mixed_workflow_request():
 
 def test_interpretation_follow_up_model_request():
     interpretation = interpret_request(
-        RoutingContext(message="use the previous model again")
+        RoutingContext(message="use the previous model again"),
+        use_llm=False,
     )
     assert interpretation.intent_type == "followup"
     assert interpretation.is_follow_up is True
@@ -132,10 +137,11 @@ def test_interpretation_follow_up_model_request():
 
 def test_interpretation_dataset_overview_request():
     interpretation = interpret_request(
-        RoutingContext(message="讲解一下这个数据集")
+        RoutingContext(message="讲解一下这个数据集"),
+        use_llm=False,
     )
     assert interpretation.is_dataset_overview is True
-    assert interpretation.intent_type == "followup"
+    assert interpretation.intent_type == "dataset_overview"
     assert interpretation.requires_ml is False
 
 
@@ -155,28 +161,21 @@ class _FakeIntentPlannerModel:
 
 def test_llm_structured_intent_is_used_when_valid(monkeypatch: pytest.MonkeyPatch):
     planner = _FakeIntentPlannerModel(
-        [
-            json.dumps(
-                {
-                    "primary_intent": "ml",
-                    "confidence": "high",
-                    "reasoning_summary": "用户明确要求训练模型并查看指标。",
-                },
-                ensure_ascii=False,
-            ),
-            json.dumps(
-                {
-                    "intent_type": "ml",
-                    "requires_ml": True,
-                    "requires_chart": False,
-                    "requires_python_analysis": False,
-                    "deliverables": ["metrics", "feature_importance"],
-                    "reasoning_summary": "用户明确要求训练模型并查看指标。",
-                    "suggested_plan": ["train a baseline model", "report metrics", "report feature importance"],
-                },
-                ensure_ascii=False,
-            ),
-        ]
+        json.dumps(
+            {
+                "primary_mode": "modeling",
+                "confidence_score": 0.88,
+                "confidence_band": "high",
+                "needs_dataset": True,
+                "needs_tool_execution": True,
+                "needs_artifact_context": False,
+                "requested_capabilities": ["train_model", "evaluate_model", "feature_importance"],
+                "ambiguity_flags": [],
+                "reasoning_summary": "用户明确要求训练模型并查看指标。",
+                "execution_plan": ["train a baseline model", "report metrics", "report feature importance"],
+            },
+            ensure_ascii=False,
+        )
     )
     monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
 
@@ -190,33 +189,26 @@ def test_llm_structured_intent_is_used_when_valid(monkeypatch: pytest.MonkeyPatc
     assert interpretation.route_source == "llm_primary"
     assert interpretation.deliverables == ["metrics", "feature_importance"]
     assert any("report metrics" in step.lower() for step in interpretation.suggested_plan)
-    assert len(planner.last_messages) == 2
+    assert len(planner.last_messages) == 1
 
 
 def test_vague_analysis_does_not_overtrigger_ml_even_if_llm_overcalls(monkeypatch: pytest.MonkeyPatch):
     planner = _FakeIntentPlannerModel(
-        [
-            json.dumps(
-                {
-                    "primary_intent": "analysis",
-                    "confidence": "low",
-                    "reasoning_summary": "模型可能有帮助。",
-                },
-                ensure_ascii=False,
-            ),
-            json.dumps(
-                {
-                    "intent_type": "ml",
-                    "requires_ml": True,
-                    "requires_chart": False,
-                    "requires_python_analysis": False,
-                    "deliverables": ["metrics"],
-                    "reasoning_summary": "模型可能有帮助。",
-                    "suggested_plan": ["train a model"],
-                },
-                ensure_ascii=False,
-            ),
-        ]
+        json.dumps(
+            {
+                "primary_mode": "modeling",
+                "confidence_score": 0.31,
+                "confidence_band": "low",
+                "needs_dataset": True,
+                "needs_tool_execution": True,
+                "needs_artifact_context": False,
+                "requested_capabilities": ["train_model", "evaluate_model"],
+                "ambiguity_flags": ["ml_overcall_risk"],
+                "reasoning_summary": "模型可能有帮助。",
+                "execution_plan": ["train a model"],
+            },
+            ensure_ascii=False,
+        )
     )
     monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
 
@@ -248,30 +240,21 @@ def test_malformed_llm_output_falls_back_to_heuristics(monkeypatch: pytest.Monke
 
 def test_dataset_overview_conflict_only_marks_guardrail_when_llm_confidence_is_medium(monkeypatch: pytest.MonkeyPatch):
     planner = _FakeIntentPlannerModel(
-        [
-            json.dumps(
-                {
-                    "primary_intent": "analysis",
-                    "confidence": "medium",
-                    "reasoning_summary": "用户可能想先看概览。",
-                },
-                ensure_ascii=False,
-            ),
-            json.dumps(
-                {
-                    "intent_type": "analysis",
-                    "is_dataset_overview": False,
-                    "is_follow_up": False,
-                    "requires_ml": False,
-                    "requires_chart": False,
-                    "requires_python_analysis": False,
-                    "deliverables": ["summary"],
-                    "reasoning_summary": "先做一般分析。",
-                    "suggested_plan": ["inspect the dataset"],
-                },
-                ensure_ascii=False,
-            ),
-        ]
+        json.dumps(
+            {
+                "primary_mode": "analysis",
+                "confidence_score": 0.64,
+                "confidence_band": "medium",
+                "needs_dataset": True,
+                "needs_tool_execution": True,
+                "needs_artifact_context": False,
+                "requested_capabilities": ["python_analysis"],
+                "ambiguity_flags": [],
+                "reasoning_summary": "用户可能想先看概览。",
+                "execution_plan": ["inspect the dataset"],
+            },
+            ensure_ascii=False,
+        )
     )
     monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
 
@@ -285,30 +268,21 @@ def test_dataset_overview_conflict_only_marks_guardrail_when_llm_confidence_is_m
 
 def test_follow_up_conflict_low_confidence_uses_guardrail_override(monkeypatch: pytest.MonkeyPatch):
     planner = _FakeIntentPlannerModel(
-        [
-            json.dumps(
-                {
-                    "primary_intent": "analysis",
-                    "confidence": "low",
-                    "reasoning_summary": "可能是新问题。",
-                },
-                ensure_ascii=False,
-            ),
-            json.dumps(
-                {
-                    "intent_type": "analysis",
-                    "is_dataset_overview": False,
-                    "is_follow_up": False,
-                    "requires_ml": False,
-                    "requires_chart": False,
-                    "requires_python_analysis": True,
-                    "deliverables": ["summary"],
-                    "reasoning_summary": "做一些新分析。",
-                    "suggested_plan": ["inspect the dataset"],
-                },
-                ensure_ascii=False,
-            ),
-        ]
+        json.dumps(
+            {
+                "primary_mode": "analysis",
+                "confidence_score": 0.24,
+                "confidence_band": "low",
+                "needs_dataset": True,
+                "needs_tool_execution": True,
+                "needs_artifact_context": False,
+                "requested_capabilities": ["python_analysis"],
+                "ambiguity_flags": [],
+                "reasoning_summary": "可能是新问题。",
+                "execution_plan": ["inspect the dataset"],
+            },
+            ensure_ascii=False,
+        )
     )
     monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
 
@@ -318,3 +292,57 @@ def test_follow_up_conflict_low_confidence_uses_guardrail_override(monkeypatch: 
     assert interpretation.is_follow_up is True
     assert interpretation.route_source == "llm_with_guardrail"
     assert "follow_up_missed" in interpretation.conflict_flags
+
+
+def test_policy_falls_back_when_artifact_context_is_missing(monkeypatch: pytest.MonkeyPatch):
+    planner = _FakeIntentPlannerModel(
+        json.dumps(
+            {
+                "primary_mode": "artifact_followup",
+                "confidence_score": 0.82,
+                "confidence_band": "high",
+                "needs_dataset": True,
+                "needs_tool_execution": False,
+                "needs_artifact_context": True,
+                "requested_capabilities": ["reuse_prior_artifact"],
+                "ambiguity_flags": [],
+                "reasoning_summary": "用户在引用之前的结果。",
+                "execution_plan": ["reuse the previous artifact"],
+            },
+            ensure_ascii=False,
+        )
+    )
+    monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
+
+    decision = interpret_request_decision(RoutingContext(message="继续看刚才那个结果", latest_artifact=None))
+
+    assert decision.route_source == "llm_with_guardrail"
+    assert decision.fallback_reasons == ["missing_artifact_context"]
+    assert "fallback_to_heuristic_due_to_missing_artifact" in decision.guardrail_actions
+
+
+def test_policy_keeps_llm_primary_when_medium_confidence_has_only_soft_ambiguity(monkeypatch: pytest.MonkeyPatch):
+    planner = _FakeIntentPlannerModel(
+        json.dumps(
+            {
+                "primary_mode": "analysis",
+                "confidence_score": 0.61,
+                "confidence_band": "medium",
+                "needs_dataset": True,
+                "needs_tool_execution": True,
+                "needs_artifact_context": False,
+                "requested_capabilities": ["python_analysis"],
+                "ambiguity_flags": [],
+                "reasoning_summary": "用户可能在问概览，但也可能想分析。",
+                "execution_plan": ["inspect the dataset"],
+            },
+            ensure_ascii=False,
+        )
+    )
+    monkeypatch.setattr(intent_planner, "INTENT_PLANNER_MODEL", planner)
+
+    decision = interpret_request_decision(RoutingContext(message="讲解一下这个数据集"))
+
+    assert decision.route_source == "llm_primary"
+    assert "dataset_overview_missed" in decision.conflict_flags
+    assert decision.fallback_reasons == []

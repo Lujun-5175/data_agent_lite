@@ -21,7 +21,7 @@ from sklearn.pipeline import Pipeline
 
 from src.data_manager import get_dataset, get_model_prep_plan, get_schema_profile
 from src.preprocessing import ModelPrepPlanError, infer_positive_label, prepare_model_inputs
-from src.result_types import artifact_registry, build_artifact
+from src.result_types import build_artifact, get_artifact_repository
 from src.settings import SETTINGS
 
 
@@ -120,7 +120,7 @@ class BaselineMLService:
             payload=payload,
             warnings=warnings,
         )
-        return artifact_registry.register(self.dataset_id, artifact)
+        return get_artifact_repository().register(self.dataset_id, artifact)
 
     def linear_regression_fit(
         self,
@@ -189,7 +189,7 @@ class BaselineMLService:
             payload=payload,
             warnings=warnings,
         )
-        return artifact_registry.register(self.dataset_id, artifact)
+        return get_artifact_repository().register(self.dataset_id, artifact)
 
     def metrics(self, *, model_artifact_id: str | None = None) -> dict[str, Any]:
         model_artifact = self._resolve_model_artifact(model_artifact_id=model_artifact_id)
@@ -204,7 +204,7 @@ class BaselineMLService:
             payload=payload,
             warnings=list(model_artifact.get("warnings", [])),
         )
-        return artifact_registry.register(self.dataset_id, artifact)
+        return get_artifact_repository().register(self.dataset_id, artifact)
 
     def feature_importance(self, *, model_artifact_id: str | None = None, top_k: int = 10) -> dict[str, Any]:
         if top_k <= 0:
@@ -235,11 +235,11 @@ class BaselineMLService:
             payload=payload,
             warnings=warnings,
         )
-        return artifact_registry.register(self.dataset_id, artifact)
+        return get_artifact_repository().register(self.dataset_id, artifact)
 
     def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
         resolved_artifact_type = self._normalize_latest_artifact_type(artifact_type)
-        artifact = artifact_registry.get_latest(self.dataset_id, artifact_type=resolved_artifact_type)
+        artifact = get_artifact_repository().get_latest(self.dataset_id, artifact_type=resolved_artifact_type)
         if artifact is None:
             raise MLHelperError("当前还没有可复用的模型结果，请先训练 baseline 模型。")
         return artifact
@@ -267,13 +267,13 @@ class BaselineMLService:
     def _resolve_model_artifact(self, *, model_artifact_id: str | None) -> dict[str, Any]:
         artifact: dict[str, Any] | None = None
         if model_artifact_id:
-            artifact = artifact_registry.get_by_artifact_id(model_artifact_id)
+            artifact = get_artifact_repository().get_by_artifact_id(model_artifact_id)
             if artifact is None:
                 raise MLHelperError("指定的模型 artifact 不存在。")
             if artifact.get("dataset_id") != self.dataset_id:
                 raise MLHelperError("指定的模型 artifact 不属于当前数据集。")
         else:
-            artifact = artifact_registry.get_latest(self.dataset_id, artifact_type="model_result")
+            artifact = get_artifact_repository().get_latest(self.dataset_id, artifact_type="model_result")
             if artifact is None:
                 raise MLHelperError("当前没有可用模型结果，请先训练 baseline 模型。")
 

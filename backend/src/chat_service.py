@@ -7,23 +7,15 @@ from typing import Any
 
 import httpx
 from fastapi import Request
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
 
 from src.agent import AgentContext, generate_general_chat_reply, get_dataset_required_decision
 from src.audit_log import get_audit_logger
-from src.chat_config import (
-    CHART_MARKERS,
-    FOLLOW_UP_MARKERS,
-    ML_IMPORTANCE_TERMS,
-    ML_METRICS_TERMS,
-    ML_TRAINING_TERMS,
-    contains_any_term,
-    looks_like_dataset_overview_fallback,
-    normalize_message_text,
-)
 from src.conversation_context import compress_conversation_messages
 from src.data_manager import get_dataset, get_dataset_recommended_prompts
 from src.errors import AppError
+from src.intent_planner import get_intent_planner_model
 from src.request_context import (
     get_degradation_mode,
     get_request_id,
@@ -37,7 +29,14 @@ from src.request_parsing import (
     extract_messages,
     has_prior_analysis_context,
 )
-from src.result_types import artifact_registry
+from src.result_types import get_artifact_repository
+from src.routing_signals import (
+    collect_required_ml_artifacts,
+    is_chart_request,
+    is_dataset_overview_request,
+    is_explicit_ml_request,
+    is_follow_up_request,
+)
 from src.routing_rules import RoutingContext, interpret_request
 from src.settings import SETTINGS
 from src.sse import backend_image_url, build_streaming_response, extract_text_from_chunk, format_sse, now_iso
@@ -61,6 +60,11 @@ class ChatRequestRequirements:
     interpretation_confidence: str
     interpretation_conflict_flags: list[str]
     interpretation_route_source: str
+    interpretation_suggested_plan: list[str]
+    interpretation_requires_ml: bool
+    interpretation_requires_chart: bool
+    interpretation_requires_python_analysis: bool
+    interpretation_is_follow_up: bool
     chart_requested: bool
     explicit_ml_request: bool
     required_ml_artifacts: set[str]
@@ -103,17 +107,17 @@ class StreamOutcome:
 @dataclass(slots=True)
 class LoopGuardState:
     total_steps: int = 0
-    repeated_tool_name: str | None = None
+    repeated_tool_signature: str | None = None
     repeated_tool_steps: int = 0
     no_progress_steps: int = 0
     progress_since_last_tool: bool = False
 
-    def register_tool_start(self, tool_name: str | None) -> None:
+    def register_tool_start(self, tool_signature: str | None) -> None:
         self.total_steps += 1
-        if tool_name and tool_name == self.repeated_tool_name:
+        if tool_signature and tool_signature == self.repeated_tool_signature:
             self.repeated_tool_steps += 1
         else:
-            self.repeated_tool_name = tool_name
+            self.repeated_tool_signature = tool_signature
             self.repeated_tool_steps = 1
         self.progress_since_last_tool = False
 
@@ -130,43 +134,81 @@ class LoopGuardState:
             self.no_progress_steps += 1
 
 
+def _build_tool_signature(tool_name: str | None, tool_data: object) -> str | None:
+    # A single tool can expose multiple meaningful actions, so we fingerprint
+    # the tool call instead of treating the tool name alone as the step identity.
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        return None
+
+    if not isinstance(tool_data, dict) or not tool_data:
+        return tool_name.strip()
+
+    interesting_keys = (
+        "action",
+        "artifact_type",
+        "columns",
+        "col_a",
+        "col_b",
+        "features",
+        "fname",
+        "group_a",
+        "group_b",
+        "group_by",
+        "group_col",
+        "input",
+        "inputs",
+        "model_artifact_id",
+        "model_type",
+        "positive_label",
+        "py_code",
+        "sort_by",
+        "target",
+        "top_k",
+        "top_n",
+        "value_col",
+    )
+    compact_data = {key: tool_data.get(key) for key in interesting_keys if key in tool_data}
+    if not compact_data:
+        compact_data = tool_data
+
+    try:
+        serialized = json.dumps(compact_data, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    except Exception:
+        serialized = str(compact_data)
+
+    return f"{tool_name.strip()}:{serialized[:240]}"
+
+
+def _get_latest_artifact_info(dataset_id: str) -> tuple[str | None, str | None]:
+    # Any newly registered artifact counts as real progress, regardless of type.
+    latest_artifact = get_artifact_repository().get_latest(dataset_id)
+    if not isinstance(latest_artifact, dict):
+        return None, None
+    artifact_id = latest_artifact.get("artifact_id")
+    artifact_type = latest_artifact.get("artifact_type")
+    normalized_artifact_id = artifact_id if isinstance(artifact_id, str) and artifact_id.strip() else None
+    normalized_artifact_type = artifact_type if isinstance(artifact_type, str) and artifact_type.strip() else None
+    return normalized_artifact_id, normalized_artifact_type
+
+
 def _normalize_text(value: str) -> str:
-    return normalize_message_text(value)
-
-
-def _contains_any_term(value: str, terms: tuple[str, ...]) -> bool:
-    return contains_any_term(value, terms)
+    return " ".join(value.strip().lower().split())
 
 
 def _looks_like_follow_up_request(message: str) -> bool:
-    return _contains_any_term(_normalize_text(message), tuple(marker.lower() for marker in FOLLOW_UP_MARKERS))
+    return is_follow_up_request(_normalize_text(message))
 
 
 def _looks_like_chart_request(message: str) -> bool:
-    return _contains_any_term(_normalize_text(message), tuple(marker.lower() for marker in CHART_MARKERS))
+    return is_chart_request(_normalize_text(message))
 
 
 def _looks_like_explicit_ml_request(message: str) -> bool:
-    normalized = _normalize_text(message)
-    if not normalized:
-        return False
-    if _looks_like_follow_up_request(normalized) and any(
-        token in normalized for token in ("model", "模型", "指标", "metrics", "feature importance", "重要特征")
-    ):
-        return True
-    return _contains_any_term(normalized, ML_TRAINING_TERMS + ML_METRICS_TERMS + ML_IMPORTANCE_TERMS)
+    return is_explicit_ml_request(_normalize_text(message))
 
 
 def _collect_required_ml_artifacts(message: str) -> set[str]:
-    normalized = _normalize_text(message)
-    required: set[str] = set()
-    if _contains_any_term(normalized, ML_TRAINING_TERMS):
-        required.add("model_result")
-    if _contains_any_term(normalized, ML_METRICS_TERMS):
-        required.add("metrics_result")
-    if _contains_any_term(normalized, ML_IMPORTANCE_TERMS):
-        required.add("feature_importance_result")
-    return required
+    return collect_required_ml_artifacts(_normalize_text(message))
 
 
 def _build_follow_up_context_message(
@@ -178,7 +220,7 @@ def _build_follow_up_context_message(
     if not force_follow_up and not _looks_like_follow_up_request(latest_user_message):
         return None
 
-    latest_artifact = artifact_registry.get_latest(dataset_id)
+    latest_artifact = get_artifact_repository().get_latest(dataset_id)
     if not isinstance(latest_artifact, dict):
         return None
 
@@ -306,7 +348,7 @@ def _strip_internal_intent_payload_prefix(text: str) -> str:
 
 
 def _looks_like_dataset_overview_request(message: str) -> bool:
-    return looks_like_dataset_overview_fallback(message)
+    return is_dataset_overview_request(message)
 
 
 def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
@@ -315,6 +357,38 @@ def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
     visible_columns = columns[:limit]
     suffix = f" 等 {len(columns)} 列" if len(columns) > limit else ""
     return "、".join(visible_columns) + suffix
+
+
+def _build_route_info_payload(requirements: ChatRequestRequirements) -> dict[str, object]:
+    return {
+        "intent_type": requirements.interpretation_intent,
+        "confidence": requirements.interpretation_confidence,
+        "route_source": requirements.interpretation_route_source,
+        "conflict_flags": requirements.interpretation_conflict_flags,
+        "suggested_plan": requirements.interpretation_suggested_plan,
+        "requires_ml": requirements.interpretation_requires_ml,
+        "requires_chart": requirements.interpretation_requires_chart,
+        "requires_python_analysis": requirements.interpretation_requires_python_analysis,
+        "is_follow_up": requirements.interpretation_is_follow_up,
+    }
+
+
+def _extract_model_text(result: Any) -> str:
+    content = getattr(result, "content", result)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            text = getattr(item, "text", None)
+            if isinstance(text, str):
+                parts.append(text)
+                continue
+            nested = getattr(item, "content", None)
+            if isinstance(nested, str):
+                parts.append(nested)
+        return "".join(parts)
+    return str(content)
 
 
 def _build_event_payload(
@@ -525,6 +599,49 @@ def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[s
     return "\n".join(lines)
 
 
+async def generate_dataset_overview_reply(dataset: object, *, recommended_prompts: list[str]) -> str:
+    model = get_intent_planner_model()
+    fallback = build_dataset_overview_reply(dataset, recommended_prompts=recommended_prompts)
+    if model is None:
+        return fallback
+
+    schema_profile = getattr(dataset, "schema_profile_artifact", {})
+    payload = {
+        "filename": getattr(dataset, "original_filename", "uploaded.csv"),
+        "dataset_id": getattr(dataset, "dataset_id", None),
+        "analysis_basis": getattr(dataset, "analysis_basis", "raw_df"),
+        "row_count": getattr(dataset, "row_count", 0),
+        "column_count": getattr(dataset, "column_count", 0),
+        "columns": getattr(dataset, "columns", []),
+        "schema_profile": {
+            "columns": schema_profile.get("columns", []) if isinstance(schema_profile, dict) else [],
+            "warnings": schema_profile.get("warnings", []) if isinstance(schema_profile, dict) else [],
+        },
+        "preprocessing_log": getattr(dataset, "preprocessing_log", []),
+        "recommended_prompts": recommended_prompts,
+    }
+    messages = [
+        SystemMessage(
+            content=(
+                "你是 Data Agent 的数据集概览助手。"
+                "请基于给定的结构化上下文，用中文写一段简洁、自然、可信的数据集讲解。"
+                "必须覆盖：数据规模、字段大类、值得注意的 warning、建议从哪些问题开始。"
+                "不要编造任何未出现在输入中的统计值。"
+                "输出纯文本，不要输出 JSON。"
+            )
+        ),
+        HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+    ]
+    try:
+        response = await model.ainvoke(messages)
+    except Exception:
+        logger.debug("dataset overview LLM generation failed", exc_info=True)
+        return fallback
+
+    text = _extract_model_text(response).strip()
+    return text or fallback
+
+
 def _record_chat_route_audit(requirements: ChatRequestRequirements) -> None:
     try:
         get_audit_logger().record(
@@ -564,6 +681,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     latest_user_message = extract_latest_user_message(messages)
     prior_analysis_active = has_prior_analysis_context(messages)
     dataset_columns: list[str] = []
+    latest_artifact: dict[str, object] | None = None
 
     if not dataset_id:
         dataset_required_decision = get_dataset_required_decision(
@@ -580,6 +698,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
             )
     else:
         dataset = get_dataset(dataset_id)
+        latest_artifact = get_artifact_repository().get_latest(dataset_id)
         dataset_columns = [
             str(column.get("name"))
             for column in getattr(dataset, "columns", [])
@@ -595,6 +714,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
             message=latest_user_message,
             dataset_columns=dataset_columns,
             prior_analysis_active=prior_analysis_active,
+            latest_artifact=latest_artifact,
         )
     )
     set_route_diagnostics(
@@ -645,6 +765,11 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         interpretation_confidence=interpretation.confidence,
         interpretation_conflict_flags=list(interpretation.conflict_flags),
         interpretation_route_source=interpretation.route_source,
+        interpretation_suggested_plan=list(interpretation.suggested_plan),
+        interpretation_requires_ml=interpretation.requires_ml,
+        interpretation_requires_chart=interpretation.requires_chart,
+        interpretation_requires_python_analysis=interpretation.requires_python_analysis,
+        interpretation_is_follow_up=interpretation.is_follow_up,
         chart_requested=interpretation.requires_chart or _looks_like_chart_request(latest_user_message),
         explicit_ml_request=_looks_like_explicit_ml_request(latest_user_message),
         required_ml_artifacts=_collect_required_ml_artifacts(latest_user_message),
@@ -657,7 +782,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
             if dataset_id
             else None
         ),
-        is_dataset_overview=bool(dataset_id and (interpretation.is_dataset_overview or _looks_like_dataset_overview_request(latest_user_message))),
+        is_dataset_overview=bool(dataset_id and interpretation.intent_type == "dataset_overview"),
         history_message_count=compressed.history_message_count,
         compressed_history_count=compressed.compressed_history_count,
         artifact_refs_count=compressed.artifact_refs_count,
@@ -676,12 +801,7 @@ async def _stream_graph_attempt(
 ) -> tuple[list[str], StreamOutcome]:
     set_failure_stage("model_stream")
     runtime_context = AgentContext(dataset_id=dataset_id)
-    prior_model_artifact_ids = {
-        artifact_type: (
-            artifact_registry.get_latest(dataset_id, artifact_type=artifact_type) or {}
-        ).get("artifact_id")
-        for artifact_type in ML_RESULT_ARTIFACT_TYPES
-    }
+    last_seen_artifact_id, _ = _get_latest_artifact_info(dataset_id)
     outcome = StreamOutcome(buffered_text_chunks=[])
     emitted_events: list[str] = []
     loop_guard = LoopGuardState()
@@ -698,7 +818,7 @@ async def _stream_graph_attempt(
         data = event.get("data") or {}
         name = event.get("name")
         if event_name == "on_tool_start":
-            loop_guard.register_tool_start(str(name) if isinstance(name, str) else None)
+            loop_guard.register_tool_start(_build_tool_signature(str(name) if isinstance(name, str) else None, data))
             _check_loop_guard(loop_guard)
             if isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
                 outcome.saw_ml_tool_call = True
@@ -721,10 +841,9 @@ async def _stream_graph_attempt(
                 outcome.buffered_text_chunks.append(text)
                 artifact_type = _extract_structured_artifact_type(text)
                 if artifact_type in ML_RESULT_ARTIFACT_TYPES:
-                    current_artifact = artifact_registry.get_latest(dataset_id, artifact_type=artifact_type)
-                    prior_artifact_id = prior_model_artifact_ids.get(artifact_type)
+                    current_artifact = get_artifact_repository().get_latest(dataset_id, artifact_type=artifact_type)
                     current_artifact_id = current_artifact.get("artifact_id") if current_artifact else None
-                    if current_artifact_id and current_artifact_id != prior_artifact_id:
+                    if current_artifact_id and current_artifact_id != last_seen_artifact_id:
                         outcome.produced_ml_artifact_types.add(str(artifact_type))
                         loop_guard.register_artifact_progress()
             else:
@@ -748,13 +867,14 @@ async def _stream_graph_attempt(
         if event_name == "on_tool_end":
             if outcome.tool_error_payload is not None:
                 _raise_tool_error(outcome.tool_error_payload)
-            if isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
-                for artifact_type in ML_RESULT_ARTIFACT_TYPES:
-                    current_artifact = artifact_registry.get_latest(dataset_id, artifact_type=artifact_type)
-                    prior_artifact_id = prior_model_artifact_ids.get(artifact_type)
-                    if current_artifact is not None and current_artifact.get("artifact_id") != prior_artifact_id:
-                        outcome.produced_ml_artifact_types.add(str(artifact_type))
-                        loop_guard.register_artifact_progress()
+            current_artifact_id, current_artifact_type = _get_latest_artifact_info(dataset_id)
+            if current_artifact_id and current_artifact_id != last_seen_artifact_id:
+                loop_guard.register_artifact_progress()
+                last_seen_artifact_id = current_artifact_id
+                if current_artifact_type in ML_RESULT_ARTIFACT_TYPES:
+                    outcome.produced_ml_artifact_types.add(str(current_artifact_type))
+            elif isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES and current_artifact_type in ML_RESULT_ARTIFACT_TYPES:
+                outcome.produced_ml_artifact_types.add(str(current_artifact_type))
 
             emitted_events.append(
                 format_sse(
@@ -830,6 +950,7 @@ async def create_chat_stream_response(
                 ("retry_stream_once", requirements.compressed_messages),
                 ("non_stream_simple_mode", requirements.simple_mode_messages),
             ]
+            yield format_sse("route_info", _build_event_payload(_build_route_info_payload(requirements)))
             for index, (mode, messages_for_reply) in enumerate(attempts):
                 try:
                     set_degradation_mode(mode)
@@ -870,9 +991,13 @@ async def create_chat_stream_response(
             with bind_current_dataset_id(dataset_id):
                 recommended_prompts = get_dataset_recommended_prompts(dataset_id)
                 yield format_sse(
+                    "route_info",
+                    _build_event_payload(_build_route_info_payload(requirements), dataset_id=dataset_id),
+                )
+                yield format_sse(
                     "message_chunk",
                     _build_event_payload(
-                        {"content": build_dataset_overview_reply(dataset, recommended_prompts=recommended_prompts)},
+                        {"content": await generate_dataset_overview_reply(dataset, recommended_prompts=recommended_prompts)},
                         dataset_id=dataset_id,
                     ),
                 )
@@ -892,6 +1017,10 @@ async def create_chat_stream_response(
                 ),
             ]
             try:
+                yield format_sse(
+                    "route_info",
+                    _build_event_payload(_build_route_info_payload(requirements), dataset_id=dataset_id),
+                )
                 for index, (mode, messages_for_graph, recursion_limit) in enumerate(attempts):
                     try:
                         set_degradation_mode(mode)

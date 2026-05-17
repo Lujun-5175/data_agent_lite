@@ -1,7 +1,9 @@
-import { Bot, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
+import { Bot, ChevronDown, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
+import { useState } from 'react';
 import type { UploadedDataset } from '../../types/data';
 import type { ChatMessage } from './types';
 import { DataPreviewCard } from './DatasetViews';
+import { summarizeRouteInfo } from './utils';
 
 export function SuggestedPrompts({
   prompts,
@@ -95,6 +97,7 @@ export function SampleDataPanel({
 }
 
 export function ChatBubble({ message }: { message: ChatMessage }) {
+  const [showRouteInfo, setShowRouteInfo] = useState(false);
   const isUser = message.type === 'user';
   const isStatus = message.kind === 'status';
   const isError = message.kind === 'error';
@@ -118,8 +121,39 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
         </div>
       )}
 
-      <div className={`flex min-h-[48px] items-center rounded-[22px] border px-4 py-3 text-[15px] leading-7 shadow-[0_8px_20px_rgba(15,23,42,0.035)] ${bubbleClass}`}>
-        <div className="whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-900">{message.content}</div>
+      <div className={`max-w-[72%] rounded-[22px] border px-4 py-3 text-[15px] leading-7 shadow-[0_8px_20px_rgba(15,23,42,0.035)] ${bubbleClass}`}>
+        <div className="flex min-h-[48px] items-center">
+          <div className="whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-900">{message.content}</div>
+        </div>
+        {!isUser && !isStatus && !isError && message.routeInfo && (
+          <div className="mt-3 border-t border-slate-200/80 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowRouteInfo((prev) => !prev)}
+              className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-slate-200 bg-slate-50/80 px-3 py-2 text-left text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+            >
+              <span>{summarizeRouteInfo(message.routeInfo)}</span>
+              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${showRouteInfo ? 'rotate-180' : ''}`} />
+            </button>
+            {showRouteInfo && (
+              <div className="mt-2 rounded-[14px] border border-slate-200 bg-slate-50/65 px-3 py-3 text-xs leading-6 text-slate-600">
+                <div>冲突标记：{message.routeInfo.conflictFlags.length > 0 ? message.routeInfo.conflictFlags.join(', ') : '无'}</div>
+                <div className="mt-1">
+                  能力判断：
+                  {[
+                    message.routeInfo.requiresMl ? '需要建模' : null,
+                    message.routeInfo.requiresChart ? '需要图表' : null,
+                    message.routeInfo.requiresPythonAnalysis ? '需要分析' : null,
+                    message.routeInfo.isFollowUp ? '续问复用' : null,
+                  ]
+                    .filter(Boolean)
+                    .join('、') || '常规回答'}
+                </div>
+                <div className="mt-1">系统计划：{message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : '无'}</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {isUser && (

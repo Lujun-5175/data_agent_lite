@@ -3,7 +3,14 @@ import { toast } from 'sonner';
 import { API_ENDPOINTS, getFriendlyErrorMessage, readApiErrorInfo } from '../../config/api';
 import type { UploadedDataset } from '../../types/data';
 import type { ChatMessage } from './types';
-import { extractImageUrl, extractStreamText, isNonEmptyString, parseSseBlocks, parseSseEventBlock } from './utils';
+import {
+  extractImageUrl,
+  extractStreamText,
+  isNonEmptyString,
+  normalizeRouteInfo,
+  parseSseBlocks,
+  parseSseEventBlock,
+} from './utils';
 
 export function useChatStream({
   uploadedDataset,
@@ -133,6 +140,15 @@ export function useChatStream({
                 if (isStaleRequest(requestGeneration)) return;
                 accumulatedContent += chunkText;
                 upsertMessage(assistantMessageId, (message) => ({ ...message, content: accumulatedContent, kind: 'text' }));
+              }
+              continue;
+            }
+
+            if (event.eventType === 'route_info') {
+              if (isStaleRequest(requestGeneration)) return;
+              const routeInfo = normalizeRouteInfo(event.payload);
+              if (routeInfo) {
+                upsertMessage(assistantMessageId, (message) => ({ ...message, routeInfo }));
               }
               continue;
             }

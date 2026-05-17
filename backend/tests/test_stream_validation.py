@@ -168,6 +168,29 @@ class _MixedWorkflowGraph:
         yield {"event": "on_tool_end", "name": "ml_execute", "data": {"action": "train"}}
 
 
+class _MultiActionStatsGraph:
+    async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
+        dataset_id = config.get("configurable", {}).get("dataset_id")
+        actions = ["describe_numeric", "group_summary", "chi_square", "latest"]
+        for index, action in enumerate(actions, start=1):
+            yield {"event": "on_tool_start", "name": "stats_execute", "data": {"action": action}}
+            if isinstance(dataset_id, str) and dataset_id:
+                artifact_registry.register(
+                    dataset_id,
+                    build_artifact(
+                        artifact_type="stats_result",
+                        dataset_id=dataset_id,
+                        payload={"stats_type": f"step_{index}", "step": index, "action": action},
+                    ),
+                )
+            yield {"event": "on_tool_end", "name": "stats_execute", "data": {"action": action}}
+        yield {
+            "event": "on_chat_model_stream",
+            "name": "golden-model",
+            "data": {"chunk": "统计分析已完成。"},
+        }
+
+
 class _CaptureGraph:
     def __init__(self) -> None:
         self.last_inputs: dict[str, Any] | None = None
@@ -264,7 +287,7 @@ def test_stream_suppresses_internal_intent_payloads(monkeypatch: pytest.MonkeyPa
     events = _stream_events(
         client,
         dataset_id,
-        [{"type": "human", "content": "讲解一下这个数据集"}],
+        [{"type": "human", "content": "继续分析这个表里的 churn drivers"}],
     )
 
     text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
@@ -281,7 +304,7 @@ def test_stream_strips_internal_intent_payload_prefix(monkeypatch: pytest.Monkey
     events = _stream_events(
         client,
         dataset_id,
-        [{"type": "human", "content": "请全面分析这个数据集"}],
+        [{"type": "human", "content": "继续分析这个表的关键特征"}],
     )
 
     text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
@@ -305,6 +328,22 @@ def test_mixed_workflow_can_chain_analysis_then_ml(monkeypatch: pytest.MonkeyPat
     assert "ml_execute" in tool_names
     errors = [payload for event_type, payload in events if event_type == "error"]
     assert not errors or errors[-1]["code"] != "structured_failure"
+
+
+@pytest.mark.usefixtures("client")
+def test_stats_workflow_can_use_multiple_actions_without_loop_guard(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    monkeypatch.setattr(server, "graph", _MultiActionStatsGraph())
+    dataset_id = _upload_telco_fixture_dataset(client)
+    events = _stream_events(
+        client,
+        dataset_id,
+        [{"type": "human", "content": "请先看一下用户行为数据里 A/B 组的转化差异，再补充分组统计"}],
+    )
+
+    errors = [payload for event_type, payload in events if event_type == "error"]
+    assert not errors
+    text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
+    assert "统计分析已完成" in text
 
 
 @pytest.mark.usefixtures("client")

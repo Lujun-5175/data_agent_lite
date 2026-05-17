@@ -281,8 +281,14 @@ def test_dataset_overview_variants_stream_metadata_without_agent_loop(query: str
         },
     )
     assert response.status_code == 200
-    assert "数据规模" in response.text
-    assert "你可以直接点上方推荐问题" in response.text
+    events = _parse_sse(response.text)
+    assert events[0][0] == "route_info"
+    route_info = events[0][1]
+    assert route_info["intent_type"] == "dataset_overview"
+    text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
+    assert "数据规模" in text
+    assert "你可以直接点上方推荐问题" in text
+    assert not [payload for event_type, payload in events if event_type in {"tool_start", "tool_end"}]
     assert "internal_error" not in response.text
 
 

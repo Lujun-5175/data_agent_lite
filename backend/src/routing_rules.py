@@ -4,26 +4,30 @@ import logging
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-from src.chat_config import (
+from src.intent_planner import IntentInterpretationPayload, plan_intent_with_llm
+from src.routing_models import RoutingDecision
+from src.routing_policy import apply_routing_policy
+from src.routing_signals import (
     ANALYSIS_OPERATION_TERMS,
-    CHART_MARKERS,
     DATASET_REQUIRED_WEIGHTS,
-    DELIVERABLE_TERM_MAP,
     EXPLICIT_ML_WEIGHTS,
     EXPLORATORY_ANALYSIS_TERMS,
-    FOLLOW_UP_MARKERS,
     STATS_INTENT_WEIGHTS,
+    collect_deliverables,
     contains_any_term,
-    looks_like_dataset_overview_fallback,
+    is_chart_request,
+    is_dataset_overview_request,
+    is_explicit_ml_request,
+    is_follow_up_request,
     normalize_message_text,
 )
-from src.intent_planner import IntentInterpretationPayload, plan_intent_with_llm
 from src.settings import SETTINGS
 
 logger = logging.getLogger(__name__)
 
 RouteConfidence = Literal["low", "medium", "high"]
 RouteSource = Literal["llm_primary", "llm_with_guardrail", "heuristic_fallback"]
+IntentType = Literal["analysis", "ml", "chart", "mixed", "followup", "dataset_overview"]
 
 
 @dataclass(slots=True)
@@ -31,6 +35,7 @@ class RoutingContext:
     message: str
     dataset_columns: list[str] = field(default_factory=list)
     prior_analysis_active: bool = False
+    latest_artifact: dict[str, object] | None = None
 
 
 @dataclass(slots=True)
@@ -46,7 +51,7 @@ class RouteDecision:
 
 @dataclass(slots=True)
 class IntentInterpretation:
-    intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"]
+    intent_type: IntentType
     is_dataset_overview: bool
     is_follow_up: bool
     requires_ml: bool
@@ -100,20 +105,8 @@ def _operation_boost(message: str) -> tuple[float, list[str]]:
     return score, mapped
 
 
-def _contains_any(message: str, terms: tuple[str, ...]) -> bool:
-    return contains_any_term(message, terms)
-
-
 def _collect_deliverables(message: str) -> list[str]:
-    deliverables: list[str] = []
-    for deliverable, terms in DELIVERABLE_TERM_MAP.items():
-        if _contains_any(message, terms):
-            deliverables.append(deliverable)
-    if "table" not in deliverables and _contains_any(message, ("group by", "group", "分组", "汇总")):
-        deliverables.append("table")
-    if "summary" not in deliverables and _contains_any(message, ("explain", "解释", "why", "原因", "总结")):
-        deliverables.append("summary")
-    return list(dict.fromkeys(deliverables))
+    return collect_deliverables(message)
 
 
 def _explicit_ml_score(message: str) -> tuple[float, list[str]]:
@@ -125,40 +118,11 @@ def _analysis_score(message: str) -> tuple[float, list[str]]:
 
 
 def _follow_up_score(message: str) -> bool:
-    return _contains_any(message, FOLLOW_UP_MARKERS)
+    return is_follow_up_request(message)
 
 
 def _chart_score(message: str) -> bool:
-    return _contains_any(message, CHART_MARKERS)
-
-
-def _needs_training(message: str) -> bool:
-    normalized = message
-    training_terms = (
-        "train a model",
-        "train model",
-        "build a model",
-        "build model",
-        "fit model",
-        "baseline model",
-        "predict",
-        "prediction",
-        "classify",
-        "classifier",
-        "classification model",
-        "logistic regression",
-        "linear regression",
-        "训练模型",
-        "训练一个模型",
-        "训练一个 baseline",
-        "预测",
-        "预测一下",
-        "分类器",
-        "分类模型",
-        "逻辑回归",
-        "线性回归",
-    )
-    return _contains_any(normalized, training_terms)
+    return is_chart_request(message)
 
 
 def decide_dataset_required(context: RoutingContext) -> RouteDecision:
@@ -263,12 +227,14 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
     explicit_ml_score, explicit_ml_reasons = _explicit_ml_score(normalized)
     analysis_score, analysis_reasons = _analysis_score(normalized)
     chart_requested = _chart_score(normalized)
-    follow_up_requested = _follow_up_score(normalized)
-    dataset_overview_requested = looks_like_dataset_overview_fallback(normalized)
+    follow_up_requested = is_follow_up_request(normalized, latest_artifact=context.latest_artifact)
+    dataset_overview_requested = is_dataset_overview_request(normalized)
     stats_decision = decide_stats_intent(context)
     ml_decision = decide_ml_intent(context)
 
-    follow_up_model_hint = follow_up_requested and _contains_any(normalized, ("model", "模型", "指标", "metrics", "feature importance", "重要特征"))
+    follow_up_model_hint = follow_up_requested and any(
+        token in normalized for token in ("model", "模型", "指标", "metrics", "feature importance", "重要特征")
+    )
     requires_ml = ml_decision.matched or explicit_ml_score >= SETTINGS.routing_ml_intent_threshold or follow_up_model_hint
     requires_chart = chart_requested
     requires_python_analysis = (
@@ -280,9 +246,9 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
     capability_count = sum(1 for flag in (requires_ml, requires_chart, requires_python_analysis) if flag)
 
     if dataset_overview_requested:
-        intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"] = "followup"
+        intent_type: IntentType = "dataset_overview"
     elif follow_up_requested and capability_count == 1:
-        intent_type: Literal["analysis", "ml", "chart", "mixed", "followup"] = "followup"
+        intent_type = "followup"
     elif capability_count > 1:
         intent_type = "mixed"
     elif requires_ml:
@@ -313,7 +279,10 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
         reasoning_parts.append("defaulted to exploratory analysis")
 
     suggested_plan: list[str] = []
-    if intent_type == "followup":
+    if intent_type == "dataset_overview":
+        suggested_plan.append("inspect the current dataset schema profile and preprocessing context")
+        suggested_plan.append("summarize the dataset shape, field groups, warnings, and suggested next questions")
+    elif intent_type == "followup":
         suggested_plan.append("resolve the referenced prior result or artifact")
         suggested_plan.append("reuse the latest relevant artifact if available")
     else:
@@ -351,96 +320,23 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
 
 
 def _looks_like_explicit_ml_request(context: RoutingContext) -> bool:
-    normalized = _normalize(context.message)
-    if not normalized:
-        return False
-    explicit_score, _ = _explicit_ml_score(normalized)
-    follow_up_model_hint = _follow_up_score(normalized) and _contains_any(
-        normalized,
-        ("model", "模型", "指标", "metrics", "feature importance", "重要特征"),
-    )
-    return explicit_score >= SETTINGS.routing_ml_intent_threshold or follow_up_model_hint
+    return is_explicit_ml_request(context.message)
 
 
-def _merge_llm_and_heuristic_intent(
-    context: RoutingContext,
-    llm_intent: IntentInterpretationPayload,
-    fallback_intent: IntentInterpretation,
-) -> IntentInterpretation:
-    normalized = _normalize(context.message)
-    explicit_ml_requested = _looks_like_explicit_ml_request(context)
-    follow_up_requested = _follow_up_score(normalized)
-    dataset_overview_requested = looks_like_dataset_overview_fallback(normalized)
-    confidence = _normalize_confidence(llm_intent.confidence)
-    conflict_flags = _merge_conflict_flags(
-        _detect_conflict_flags(
-            llm_intent=llm_intent,
-            fallback_intent=fallback_intent,
-            explicit_ml_requested=explicit_ml_requested,
-            follow_up_requested=follow_up_requested,
-            dataset_overview_requested=dataset_overview_requested,
-        ),
-        llm_intent.conflict_flags,
-    )
-    guardrail_override = confidence == "low" and bool(conflict_flags)
-    route_source: RouteSource = "llm_with_guardrail" if guardrail_override else "llm_primary"
-
-    if guardrail_override:
-        return _build_guardrailed_interpretation(
-            llm_intent=llm_intent,
-            fallback_intent=fallback_intent,
-            conflict_flags=conflict_flags,
-            route_source=route_source,
-        )
-
-    is_dataset_overview = bool(llm_intent.is_dataset_overview)
-    is_follow_up = bool(llm_intent.is_follow_up)
-    requires_ml = bool(llm_intent.requires_ml)
-    requires_chart = bool(llm_intent.requires_chart)
-    requires_python_analysis = bool(llm_intent.requires_python_analysis or is_dataset_overview)
-    deliverables = list(dict.fromkeys(llm_intent.deliverables or fallback_intent.deliverables))
-
-    intent_type = _resolve_intent_type(
-        is_dataset_overview=is_dataset_overview,
-        is_follow_up=is_follow_up,
-        follow_up_requested=follow_up_requested,
-        requires_ml=requires_ml,
-        requires_chart=requires_chart,
-        requires_python_analysis=requires_python_analysis,
-    )
-
-    reasoning_parts: list[str] = []
-    if llm_intent.reasoning_summary.strip():
-        reasoning_parts.append(f"LLM: {llm_intent.reasoning_summary.strip()}")
-    if conflict_flags and fallback_intent.reasoning_summary.strip():
-        reasoning_parts.append(f"guardrail: {fallback_intent.reasoning_summary.strip()}")
-    if conflict_flags:
-        reasoning_parts.append(f"conflicts: {', '.join(conflict_flags)}")
-    if not reasoning_parts:
-        reasoning_parts.append("defaulted to exploratory analysis")
-
-    suggested_plan = _merge_suggested_plan(
-        llm_intent.suggested_plan or fallback_intent.suggested_plan,
-        requires_ml=requires_ml,
-        requires_chart=requires_chart,
-        requires_python_analysis=requires_python_analysis,
-        deliverables=deliverables,
-        follow_up_requested=follow_up_requested,
-    )
-
+def _routing_decision_to_intent_interpretation(decision: RoutingDecision) -> IntentInterpretation:
     return IntentInterpretation(
-        intent_type=intent_type,
-        is_dataset_overview=is_dataset_overview,
-        is_follow_up=is_follow_up,
-        requires_ml=requires_ml,
-        requires_chart=requires_chart,
-        requires_python_analysis=requires_python_analysis,
-        confidence=confidence,
-        conflict_flags=conflict_flags,
-        route_source=route_source,
-        deliverables=deliverables,
-        reasoning_summary="; ".join(reasoning_parts),
-        suggested_plan=suggested_plan,
+        intent_type=decision.intent_type,
+        is_dataset_overview=decision.is_dataset_overview,
+        is_follow_up=decision.is_follow_up,
+        requires_ml=decision.requires_ml,
+        requires_chart=decision.requires_chart,
+        requires_python_analysis=decision.requires_python_analysis,
+        confidence=decision.confidence,
+        conflict_flags=list(decision.conflict_flags),
+        route_source=decision.route_source,
+        deliverables=list(decision.deliverables),
+        reasoning_summary=decision.reasoning_summary,
+        suggested_plan=list(decision.suggested_plan),
     )
 
 
@@ -450,102 +346,6 @@ def _normalize_confidence(value: str | None) -> RouteConfidence:
     if value == "low":
         return "low"
     return "medium"
-
-
-def _merge_conflict_flags(*values: list[str]) -> list[str]:
-    merged: list[str] = []
-    for group in values:
-        for value in group:
-            token = value.strip().lower()
-            if token and token not in merged:
-                merged.append(token)
-    return merged
-
-
-def _detect_conflict_flags(
-    *,
-    llm_intent: IntentInterpretationPayload,
-    fallback_intent: IntentInterpretation,
-    explicit_ml_requested: bool,
-    follow_up_requested: bool,
-    dataset_overview_requested: bool,
-) -> list[str]:
-    conflict_flags: list[str] = []
-    if dataset_overview_requested and not llm_intent.is_dataset_overview:
-        conflict_flags.append("dataset_overview_missed")
-    if follow_up_requested and not llm_intent.is_follow_up:
-        conflict_flags.append("follow_up_missed")
-    if explicit_ml_requested and not llm_intent.requires_ml:
-        conflict_flags.append("explicit_ml_missed")
-    if fallback_intent.requires_chart and not llm_intent.requires_chart:
-        conflict_flags.append("chart_request_missed")
-    if llm_intent.requires_ml and not explicit_ml_requested and fallback_intent.intent_type in {"analysis", "followup"}:
-        conflict_flags.append("ml_overcall")
-    return conflict_flags
-
-
-def _resolve_intent_type(
-    *,
-    is_dataset_overview: bool,
-    is_follow_up: bool,
-    follow_up_requested: bool,
-    requires_ml: bool,
-    requires_chart: bool,
-    requires_python_analysis: bool,
-) -> Literal["analysis", "ml", "chart", "mixed", "followup"]:
-    capability_count = sum(1 for flag in (requires_ml, requires_chart, requires_python_analysis) if flag)
-    if is_dataset_overview:
-        return "followup"
-    if is_follow_up and capability_count == 1:
-        return "followup"
-    if capability_count > 1:
-        return "mixed"
-    if requires_ml:
-        return "ml"
-    if requires_chart:
-        return "chart"
-    if requires_python_analysis:
-        return "analysis"
-    if follow_up_requested:
-        return "followup"
-    return "analysis"
-
-
-def _build_guardrailed_interpretation(
-    *,
-    llm_intent: IntentInterpretationPayload,
-    fallback_intent: IntentInterpretation,
-    conflict_flags: list[str],
-    route_source: RouteSource,
-) -> IntentInterpretation:
-    reasoning_parts: list[str] = []
-    if llm_intent.reasoning_summary.strip():
-        reasoning_parts.append(f"LLM: {llm_intent.reasoning_summary.strip()}")
-    if fallback_intent.reasoning_summary.strip():
-        reasoning_parts.append(f"guardrail override: {fallback_intent.reasoning_summary.strip()}")
-    if conflict_flags:
-        reasoning_parts.append(f"conflicts: {', '.join(conflict_flags)}")
-    return IntentInterpretation(
-        intent_type=fallback_intent.intent_type,
-        is_dataset_overview=fallback_intent.is_dataset_overview,
-        is_follow_up=fallback_intent.is_follow_up,
-        requires_ml=fallback_intent.requires_ml,
-        requires_chart=fallback_intent.requires_chart,
-        requires_python_analysis=fallback_intent.requires_python_analysis,
-        confidence="low",
-        conflict_flags=conflict_flags,
-        route_source=route_source,
-        deliverables=fallback_intent.deliverables,
-        reasoning_summary="; ".join(reasoning_parts) if reasoning_parts else fallback_intent.reasoning_summary,
-        suggested_plan=_merge_suggested_plan(
-            fallback_intent.suggested_plan,
-            requires_ml=fallback_intent.requires_ml,
-            requires_chart=fallback_intent.requires_chart,
-            requires_python_analysis=fallback_intent.requires_python_analysis,
-            deliverables=fallback_intent.deliverables,
-            follow_up_requested=fallback_intent.is_follow_up,
-        ),
-    )
 
 
 def _merge_suggested_plan(
@@ -584,19 +384,82 @@ def _merge_suggested_plan(
     return list(dict.fromkeys(merged))
 
 
-def interpret_request(context: RoutingContext, *, use_llm: bool = True) -> IntentInterpretation:
-    fallback_intent = _heuristic_interpret_request(context)
+def _heuristic_interpretation_to_routing_decision(interpretation: IntentInterpretation) -> RoutingDecision:
+    return RoutingDecision(
+        primary_mode=(
+            "dataset_overview"
+            if interpretation.intent_type == "dataset_overview"
+            else "artifact_followup"
+            if interpretation.intent_type == "followup"
+            else "visualization"
+            if interpretation.intent_type == "chart"
+            else "modeling"
+            if interpretation.intent_type == "ml"
+            else "mixed"
+            if interpretation.intent_type == "mixed"
+            else "analysis"
+        ),
+        confidence_score=0.3,
+        confidence_band=_normalize_confidence(interpretation.confidence),
+        needs_dataset=interpretation.intent_type != "analysis" or interpretation.requires_python_analysis or interpretation.requires_chart or interpretation.requires_ml,
+        needs_tool_execution=interpretation.requires_python_analysis or interpretation.requires_chart or interpretation.requires_ml,
+        needs_artifact_context=interpretation.is_follow_up,
+        requested_capabilities=[],
+        ambiguity_flags=list(interpretation.conflict_flags),
+        reasoning_summary=interpretation.reasoning_summary,
+        execution_plan=list(interpretation.suggested_plan),
+        intent_type=interpretation.intent_type,
+        is_dataset_overview=interpretation.is_dataset_overview,
+        is_follow_up=interpretation.is_follow_up,
+        requires_ml=interpretation.requires_ml,
+        requires_chart=interpretation.requires_chart,
+        requires_python_analysis=interpretation.requires_python_analysis,
+        deliverables=list(interpretation.deliverables),
+        confidence=_normalize_confidence(interpretation.confidence),
+        conflict_flags=list(interpretation.conflict_flags),
+        route_source=interpretation.route_source,
+        suggested_plan=list(interpretation.suggested_plan),
+    )
+
+
+def interpret_request_decision(context: RoutingContext, *, use_llm: bool = True) -> RoutingDecision:
+    heuristic_interpretation = _heuristic_interpret_request(context)
+    heuristic_decision = _heuristic_interpretation_to_routing_decision(heuristic_interpretation)
     if not use_llm:
-        return fallback_intent
-    llm_intent = plan_intent_with_llm(
+        return heuristic_decision
+
+    llm_decision = plan_intent_with_llm(
         context.message,
         dataset_columns=context.dataset_columns,
         prior_analysis_active=context.prior_analysis_active,
     )
-    if llm_intent is None:
-        return fallback_intent
+    policy_result = apply_routing_policy(
+        context=context,
+        llm_decision=llm_decision,
+        heuristic_decision=heuristic_decision,
+    )
+    final_decision = policy_result.decision
+    final_plan = _merge_suggested_plan(
+        final_decision.suggested_plan or final_decision.execution_plan or heuristic_interpretation.suggested_plan,
+        requires_ml=final_decision.requires_ml,
+        requires_chart=final_decision.requires_chart,
+        requires_python_analysis=final_decision.requires_python_analysis,
+        deliverables=final_decision.deliverables or heuristic_interpretation.deliverables,
+        follow_up_requested=final_decision.is_follow_up,
+    )
+    return final_decision.model_copy(
+        update={
+            "confidence": _normalize_confidence(final_decision.confidence_band),
+            "suggested_plan": final_plan,
+            "execution_plan": final_plan,
+        }
+    )
+
+
+def interpret_request(context: RoutingContext, *, use_llm: bool = True) -> IntentInterpretation:
     try:
-        return _merge_llm_and_heuristic_intent(context, llm_intent, fallback_intent)
+        decision = interpret_request_decision(context, use_llm=use_llm)
+        return _routing_decision_to_intent_interpretation(decision)
     except Exception:  # pragma: no cover - guardrail fallback
         logger.exception("Failed to merge LLM and heuristic intent; falling back to heuristic interpretation.")
-        return fallback_intent
+        return _heuristic_interpret_request(context)
