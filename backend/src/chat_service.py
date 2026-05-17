@@ -10,10 +10,10 @@ from fastapi import Request
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
 
-from src.agent import AgentContext, generate_general_chat_reply, get_dataset_required_decision
+from src.agent import AgentContext, _format_dataset_context_summary, generate_general_chat_reply, get_dataset_required_decision
 from src.audit_log import get_audit_logger
 from src.conversation_context import compress_conversation_messages
-from src.data_manager import get_dataset, get_dataset_recommended_prompts
+from src.data_manager import get_data_context_summary, get_dataset, get_dataset_recommended_prompts
 from src.errors import AppError
 from src.intent_planner import get_intent_planner_model
 from src.request_context import (
@@ -30,6 +30,7 @@ from src.request_parsing import (
     has_prior_analysis_context,
 )
 from src.result_types import get_artifact_repository
+from src.routing_models import RoutingDecision
 from src.routing_signals import (
     collect_required_ml_artifacts,
     is_chart_request,
@@ -37,7 +38,7 @@ from src.routing_signals import (
     is_explicit_ml_request,
     is_follow_up_request,
 )
-from src.routing_rules import RoutingContext, interpret_request
+from src.routing_rules import RoutingContext, interpret_request_decision
 from src.settings import SETTINGS
 from src.sse import backend_image_url, build_streaming_response, extract_text_from_chunk, format_sse, now_iso
 from src.tools import bind_current_dataset_id, consume_current_image_event
@@ -56,6 +57,7 @@ class ChatRequestRequirements:
     simple_mode_messages: list[dict[str, str]]
     latest_user_message: str
     prior_analysis_active: bool
+    routing_decision: RoutingDecision
     interpretation_intent: str
     interpretation_confidence: str
     interpretation_conflict_flags: list[str]
@@ -65,11 +67,21 @@ class ChatRequestRequirements:
     interpretation_requires_chart: bool
     interpretation_requires_python_analysis: bool
     interpretation_is_follow_up: bool
+    interpretation_primary_mode: str
+    interpretation_confidence_score: float
+    interpretation_requested_capabilities: list[str]
+    interpretation_ambiguity_flags: list[str]
+    interpretation_guardrail_actions: list[str]
+    interpretation_fallback_reasons: list[str]
+    interpretation_needs_dataset: bool
+    interpretation_needs_tool_execution: bool
+    interpretation_needs_artifact_context: bool
     chart_requested: bool
     explicit_ml_request: bool
     required_ml_artifacts: set[str]
     follow_up_message: dict[str, object] | None
     is_dataset_overview: bool
+    final_branch: str
     history_message_count: int
     compressed_history_count: int
     artifact_refs_count: int
@@ -361,15 +373,26 @@ def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
 
 def _build_route_info_payload(requirements: ChatRequestRequirements) -> dict[str, object]:
     return {
+        "primary_mode": requirements.interpretation_primary_mode,
+        "confidence_score": requirements.interpretation_confidence_score,
         "intent_type": requirements.interpretation_intent,
         "confidence": requirements.interpretation_confidence,
         "route_source": requirements.interpretation_route_source,
         "conflict_flags": requirements.interpretation_conflict_flags,
+        "ambiguity_flags": requirements.interpretation_ambiguity_flags,
+        "guardrail_actions": requirements.interpretation_guardrail_actions,
+        "fallback_reasons": requirements.interpretation_fallback_reasons,
         "suggested_plan": requirements.interpretation_suggested_plan,
+        "execution_plan": requirements.interpretation_suggested_plan,
+        "requested_capabilities": requirements.interpretation_requested_capabilities,
         "requires_ml": requirements.interpretation_requires_ml,
         "requires_chart": requirements.interpretation_requires_chart,
         "requires_python_analysis": requirements.interpretation_requires_python_analysis,
         "is_follow_up": requirements.interpretation_is_follow_up,
+        "needs_dataset": requirements.interpretation_needs_dataset,
+        "needs_tool_execution": requirements.interpretation_needs_tool_execution,
+        "needs_artifact_context": requirements.interpretation_needs_artifact_context,
+        "final_branch": requirements.final_branch,
     }
 
 
@@ -642,6 +665,40 @@ async def generate_dataset_overview_reply(dataset: object, *, recommended_prompt
     return text or fallback
 
 
+async def generate_dataset_direct_reply(
+    dataset_id: str,
+    messages: list[dict[str, Any]],
+    *,
+    clarification: bool = False,
+) -> str:
+    dataset_summary = _format_dataset_context_summary(get_data_context_summary(dataset_id))
+    helper_message = (
+        "当前用户问题更适合直接回答。请仅在必要时引用下面的数据集摘要，不要虚构未给出的统计值。\n"
+        if not clarification
+        else "当前信息不足以安全执行数据分析。请基于下面的数据集摘要，用中文明确指出缺失信息，并提出最小可行澄清问题。\n"
+    )
+    contextual_messages = [
+        {
+            "type": "assistant",
+            "content": helper_message + "\n数据集摘要：\n" + dataset_summary,
+        },
+        *messages,
+    ]
+    return await generate_general_chat_reply(contextual_messages)
+
+
+def _resolve_final_branch(*, dataset_id: str | None, routing_decision: RoutingDecision) -> str:
+    if not dataset_id:
+        return "general_chat"
+    if routing_decision.primary_mode == "dataset_overview":
+        return "dataset_overview"
+    if routing_decision.primary_mode == "clarification":
+        return "clarification"
+    if routing_decision.primary_mode == "direct_answer" and not routing_decision.needs_tool_execution:
+        return "direct_answer"
+    return "agent_graph"
+
+
 def _record_chat_route_audit(requirements: ChatRequestRequirements) -> None:
     try:
         get_audit_logger().record(
@@ -660,11 +717,21 @@ def _record_chat_route_audit(requirements: ChatRequestRequirements) -> None:
                 "message_preview": requirements.latest_user_message[:120],
                 "route_stage": "request_analysis",
                 "routing": {
+                    "primary_mode": requirements.interpretation_primary_mode,
+                    "confidence_score": requirements.interpretation_confidence_score,
                     "final_intent": requirements.interpretation_intent,
                     "confidence": requirements.interpretation_confidence,
                     "conflict_flags": requirements.interpretation_conflict_flags,
+                    "ambiguity_flags": requirements.interpretation_ambiguity_flags,
+                    "guardrail_actions": requirements.interpretation_guardrail_actions,
+                    "fallback_reasons": requirements.interpretation_fallback_reasons,
+                    "requested_capabilities": requirements.interpretation_requested_capabilities,
+                    "needs_dataset": requirements.interpretation_needs_dataset,
+                    "needs_tool_execution": requirements.interpretation_needs_tool_execution,
+                    "needs_artifact_context": requirements.interpretation_needs_artifact_context,
                     "route_source": requirements.interpretation_route_source,
                     "used_fallback": requirements.interpretation_route_source == "heuristic_fallback",
+                    "final_branch": requirements.final_branch,
                 },
             },
         )
@@ -709,7 +776,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     if not compressed.messages_for_model:
         raise AppError("history_compression_error", "会话历史压缩失败，请重新发起请求。", 422, stage="history_compression")
 
-    interpretation = interpret_request(
+    routing_decision = interpret_request_decision(
         RoutingContext(
             message=latest_user_message,
             dataset_columns=dataset_columns,
@@ -717,13 +784,17 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
             latest_artifact=latest_artifact,
         )
     )
+    final_branch = _resolve_final_branch(dataset_id=dataset_id, routing_decision=routing_decision)
     set_route_diagnostics(
         {
-            "final_intent": interpretation.intent_type,
-            "confidence": interpretation.confidence,
-            "conflict_flags": interpretation.conflict_flags,
-            "route_source": interpretation.route_source,
-            "used_fallback": interpretation.route_source == "heuristic_fallback",
+            "primary_mode": routing_decision.primary_mode,
+            "confidence_score": routing_decision.confidence_score,
+            "final_intent": routing_decision.intent_type,
+            "confidence": routing_decision.confidence,
+            "conflict_flags": routing_decision.conflict_flags,
+            "route_source": routing_decision.route_source,
+            "used_fallback": routing_decision.route_source == "heuristic_fallback",
+            "final_branch": final_branch,
         }
     )
     simple_mode_messages = []
@@ -761,28 +832,39 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         simple_mode_messages=simple_mode_messages,
         latest_user_message=latest_user_message,
         prior_analysis_active=prior_analysis_active,
-        interpretation_intent=interpretation.intent_type,
-        interpretation_confidence=interpretation.confidence,
-        interpretation_conflict_flags=list(interpretation.conflict_flags),
-        interpretation_route_source=interpretation.route_source,
-        interpretation_suggested_plan=list(interpretation.suggested_plan),
-        interpretation_requires_ml=interpretation.requires_ml,
-        interpretation_requires_chart=interpretation.requires_chart,
-        interpretation_requires_python_analysis=interpretation.requires_python_analysis,
-        interpretation_is_follow_up=interpretation.is_follow_up,
-        chart_requested=interpretation.requires_chart or _looks_like_chart_request(latest_user_message),
+        routing_decision=routing_decision,
+        interpretation_intent=routing_decision.intent_type,
+        interpretation_confidence=routing_decision.confidence,
+        interpretation_conflict_flags=list(routing_decision.conflict_flags),
+        interpretation_route_source=routing_decision.route_source,
+        interpretation_suggested_plan=list(routing_decision.suggested_plan),
+        interpretation_requires_ml=routing_decision.requires_ml,
+        interpretation_requires_chart=routing_decision.requires_chart,
+        interpretation_requires_python_analysis=routing_decision.requires_python_analysis,
+        interpretation_is_follow_up=routing_decision.is_follow_up,
+        interpretation_primary_mode=routing_decision.primary_mode,
+        interpretation_confidence_score=routing_decision.confidence_score,
+        interpretation_requested_capabilities=list(routing_decision.requested_capabilities),
+        interpretation_ambiguity_flags=list(routing_decision.ambiguity_flags),
+        interpretation_guardrail_actions=list(routing_decision.guardrail_actions),
+        interpretation_fallback_reasons=list(routing_decision.fallback_reasons),
+        interpretation_needs_dataset=routing_decision.needs_dataset,
+        interpretation_needs_tool_execution=routing_decision.needs_tool_execution,
+        interpretation_needs_artifact_context=routing_decision.needs_artifact_context,
+        chart_requested=routing_decision.requires_chart or _looks_like_chart_request(latest_user_message),
         explicit_ml_request=_looks_like_explicit_ml_request(latest_user_message),
         required_ml_artifacts=_collect_required_ml_artifacts(latest_user_message),
         follow_up_message=(
             _build_follow_up_context_message(
                 dataset_id,
                 latest_user_message,
-                force_follow_up=interpretation.is_follow_up,
+                force_follow_up=routing_decision.is_follow_up,
             )
             if dataset_id
             else None
         ),
-        is_dataset_overview=bool(dataset_id and interpretation.intent_type == "dataset_overview"),
+        is_dataset_overview=bool(dataset_id and routing_decision.intent_type == "dataset_overview"),
+        final_branch=final_branch,
         history_message_count=compressed.history_message_count,
         compressed_history_count=compressed.compressed_history_count,
         artifact_refs_count=compressed.artifact_refs_count,
@@ -1004,6 +1086,57 @@ async def create_chat_stream_response(
                 yield _build_done_sse(dataset_id=dataset_id)
 
         return build_streaming_response(dataset_overview_event_generator())
+
+    if requirements.final_branch in {"direct_answer", "clarification"}:
+        async def dataset_direct_event_generator():
+            with bind_current_dataset_id(dataset_id):
+                attempts = [
+                    ("none", requirements.compressed_messages),
+                    ("retry_stream_once", requirements.compressed_messages),
+                    ("non_stream_simple_mode", requirements.simple_mode_messages),
+                ]
+                yield format_sse(
+                    "route_info",
+                    _build_event_payload(_build_route_info_payload(requirements), dataset_id=dataset_id),
+                )
+                for index, (mode, messages_for_reply) in enumerate(attempts):
+                    try:
+                        set_degradation_mode(mode)
+                        set_failure_stage("model_stream")
+                        reply = await generate_dataset_direct_reply(
+                            dataset_id,
+                            messages_for_reply,
+                            clarification=requirements.final_branch == "clarification",
+                        )
+                        if reply.strip():
+                            yield format_sse(
+                                "message_chunk",
+                                _build_event_payload({"content": reply}, dataset_id=dataset_id),
+                            )
+                        yield _build_done_sse(dataset_id=dataset_id)
+                        return
+                    except Exception as exc:
+                        mapped_error = _classify_stream_exception(exc)
+                        logger.exception(
+                            "dataset direct reply failed",
+                            extra={
+                                "request_id": get_request_id(),
+                                "dataset_id": dataset_id,
+                                "attempt": index,
+                                "degradation_mode": mode,
+                                "error_code": mapped_error.code,
+                                "failure_stage": mapped_error.stage,
+                                "primary_mode": requirements.interpretation_primary_mode,
+                                "intent_route_source": requirements.interpretation_route_source,
+                            },
+                        )
+                        if mapped_error.retryable and index < len(attempts) - 1:
+                            continue
+                        yield _build_error_sse(mapped_error, dataset_id=dataset_id)
+                        yield _build_done_sse(dataset_id=dataset_id)
+                        return
+
+        return build_streaming_response(dataset_direct_event_generator())
 
     async def event_generator():
         with bind_current_dataset_id(dataset_id):

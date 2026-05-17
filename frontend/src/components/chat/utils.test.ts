@@ -59,19 +59,33 @@ describe('chat utils', () => {
 
   it('normalizes route info payloads', () => {
     const routeInfo = normalizeRouteInfo({
+      primary_mode: 'dataset_overview',
+      confidence_score: 0.72,
       intent_type: 'dataset_overview',
       confidence: 'medium',
       route_source: 'llm_primary',
       conflict_flags: ['dataset_overview_missed'],
+      ambiguity_flags: ['dataset_overview_missed'],
+      guardrail_actions: [],
+      fallback_reasons: [],
       suggested_plan: ['inspect schema', 'summarize dataset'],
+      requested_capabilities: ['summarize_dataset', 'inspect_schema'],
       requires_ml: false,
       requires_chart: false,
       requires_python_analysis: true,
       is_follow_up: false,
+      needs_dataset: true,
+      needs_tool_execution: false,
+      needs_artifact_context: false,
+      final_branch: 'dataset_overview',
     });
 
     expect(routeInfo).not.toBeNull();
+    expect(routeInfo?.primaryMode).toBe('dataset_overview');
+    expect(routeInfo?.confidenceScore).toBe(0.72);
+    expect(routeInfo?.requestedCapabilities).toEqual(['summarize_dataset', 'inspect_schema']);
+    expect(routeInfo?.finalBranch).toBe('dataset_overview');
     expect(routeInfo?.intentType).toBe('dataset_overview');
-    expect(summarizeRouteInfo(routeInfo!)).toContain('概览');
+    expect(summarizeRouteInfo(routeInfo!)).toContain('数据概览');
   });
 });

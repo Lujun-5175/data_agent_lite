@@ -385,6 +385,24 @@ def _merge_suggested_plan(
 
 
 def _heuristic_interpretation_to_routing_decision(interpretation: IntentInterpretation) -> RoutingDecision:
+    requested_capabilities: list[str] = []
+    if interpretation.intent_type == "dataset_overview":
+        requested_capabilities.extend(["summarize_dataset", "inspect_schema"])
+    if interpretation.is_follow_up:
+        requested_capabilities.append("reuse_prior_artifact")
+    if interpretation.requires_python_analysis:
+        requested_capabilities.extend(["python_analysis", "group_analysis"])
+    if interpretation.requires_chart:
+        requested_capabilities.append("chart_generation")
+    if interpretation.requires_ml:
+        requested_capabilities.append("train_model")
+    if "metrics" in interpretation.deliverables:
+        requested_capabilities.append("evaluate_model")
+    if "feature_importance" in interpretation.deliverables:
+        requested_capabilities.append("feature_importance")
+    if not requested_capabilities and interpretation.intent_type == "analysis":
+        requested_capabilities.append("direct_answer")
+
     return RoutingDecision(
         primary_mode=(
             "dataset_overview"
@@ -404,7 +422,7 @@ def _heuristic_interpretation_to_routing_decision(interpretation: IntentInterpre
         needs_dataset=interpretation.intent_type != "analysis" or interpretation.requires_python_analysis or interpretation.requires_chart or interpretation.requires_ml,
         needs_tool_execution=interpretation.requires_python_analysis or interpretation.requires_chart or interpretation.requires_ml,
         needs_artifact_context=interpretation.is_follow_up,
-        requested_capabilities=[],
+        requested_capabilities=list(dict.fromkeys(requested_capabilities)),
         ambiguity_flags=list(interpretation.conflict_flags),
         reasoning_summary=interpretation.reasoning_summary,
         execution_plan=list(interpretation.suggested_plan),

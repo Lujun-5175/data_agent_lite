@@ -137,7 +137,11 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
             </button>
             {showRouteInfo && (
               <div className="mt-2 rounded-[14px] border border-slate-200 bg-slate-50/65 px-3 py-3 text-xs leading-6 text-slate-600">
-                <div>冲突标记：{message.routeInfo.conflictFlags.length > 0 ? message.routeInfo.conflictFlags.join(', ') : '无'}</div>
+                <div>主模式：{message.routeInfo.primaryMode || '未提供'}</div>
+                <div className="mt-1">实际分支：{message.routeInfo.finalBranch || '未提供'}</div>
+                <div className="mt-1">歧义标记：{message.routeInfo.ambiguityFlags.length > 0 ? message.routeInfo.ambiguityFlags.join(', ') : '无'}</div>
+                <div className="mt-1">兼容冲突标记：{message.routeInfo.conflictFlags.length > 0 ? message.routeInfo.conflictFlags.join(', ') : '无'}</div>
+                <div className="mt-1">请求能力：{message.routeInfo.requestedCapabilities.length > 0 ? message.routeInfo.requestedCapabilities.join(', ') : '无'}</div>
                 <div className="mt-1">
                   能力判断：
                   {[
@@ -149,6 +153,8 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
                     .filter(Boolean)
                     .join('、') || '常规回答'}
                 </div>
+                <div className="mt-1">Guardrail 动作：{message.routeInfo.guardrailActions.length > 0 ? message.routeInfo.guardrailActions.join(', ') : '无'}</div>
+                <div className="mt-1">回退原因：{message.routeInfo.fallbackReasons.length > 0 ? message.routeInfo.fallbackReasons.join(', ') : '无'}</div>
                 <div className="mt-1">系统计划：{message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : '无'}</div>
               </div>
             )}

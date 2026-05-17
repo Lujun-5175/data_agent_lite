@@ -55,29 +55,60 @@ export function extractImageUrl(payload: Record<string, unknown>) {
 }
 
 export function normalizeRouteInfo(payload: Record<string, unknown>): RouteInfo | null {
+  const primaryMode = typeof payload.primary_mode === 'string' ? payload.primary_mode : '';
+  const confidenceScore = typeof payload.confidence_score === 'number' ? payload.confidence_score : null;
   const intentType = typeof payload.intent_type === 'string' ? payload.intent_type : '';
   const confidence = typeof payload.confidence === 'string' ? payload.confidence : 'medium';
   const routeSource = typeof payload.route_source === 'string' ? payload.route_source : '';
+  const finalBranch = typeof payload.final_branch === 'string' ? payload.final_branch : '';
   if (!intentType || !routeSource) return null;
 
   return {
+    primaryMode,
+    confidenceScore,
     intentType,
     confidence,
     routeSource,
     conflictFlags: Array.isArray(payload.conflict_flags)
       ? payload.conflict_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
       : [],
+    ambiguityFlags: Array.isArray(payload.ambiguity_flags)
+      ? payload.ambiguity_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    guardrailActions: Array.isArray(payload.guardrail_actions)
+      ? payload.guardrail_actions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    fallbackReasons: Array.isArray(payload.fallback_reasons)
+      ? payload.fallback_reasons.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
     suggestedPlan: Array.isArray(payload.suggested_plan)
       ? payload.suggested_plan.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    requestedCapabilities: Array.isArray(payload.requested_capabilities)
+      ? payload.requested_capabilities.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
       : [],
     requiresMl: payload.requires_ml === true,
     requiresChart: payload.requires_chart === true,
     requiresPythonAnalysis: payload.requires_python_analysis === true,
     isFollowUp: payload.is_follow_up === true,
+    needsDataset: payload.needs_dataset === true,
+    needsToolExecution: payload.needs_tool_execution === true,
+    needsArtifactContext: payload.needs_artifact_context === true,
+    finalBranch,
   };
 }
 
 export function summarizeRouteInfo(routeInfo: RouteInfo) {
+  const primaryModeLabelMap: Record<string, string> = {
+    direct_answer: '直接回答',
+    dataset_overview: '数据概览',
+    analysis: '分析',
+    visualization: '可视化',
+    modeling: '建模',
+    artifact_followup: '结果续问',
+    mixed: '混合流程',
+    clarification: '澄清问题',
+  };
   const intentLabelMap: Record<string, string> = {
     analysis: '分析',
     ml: '建模',
@@ -99,7 +130,8 @@ export function summarizeRouteInfo(routeInfo: RouteInfo) {
   const intentLabel = intentLabelMap[routeInfo.intentType] ?? routeInfo.intentType;
   const confidenceLabel = confidenceLabelMap[routeInfo.confidence] ?? routeInfo.confidence;
   const routeSourceLabel = routeSourceLabelMap[routeInfo.routeSource] ?? routeInfo.routeSource;
-  return `${intentLabel} · ${confidenceLabel} · ${routeSourceLabel}`;
+  const primaryModeLabel = primaryModeLabelMap[routeInfo.primaryMode] ?? (routeInfo.primaryMode || intentLabel);
+  return `${primaryModeLabel} · ${confidenceLabel} · ${routeSourceLabel}`;
 }
 
 export function buildMessageHistory(messages: ChatMessage[]) {

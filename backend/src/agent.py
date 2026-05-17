@@ -18,7 +18,7 @@ from src.routing_rules import (
     decide_dataset_required,
     decide_ml_intent,
     decide_stats_intent,
-    interpret_request,
+    interpret_request_decision,
 )
 from src.settings import SETTINGS
 from src.tools import (
@@ -324,7 +324,7 @@ def dataset_context_middleware(request) -> str:
             dataset_scope = "当前没有可用数据集。普通聊天可直接回答，数据分析需先上传 CSV。"
             latest_artifact = None
 
-        interpretation = interpret_request(
+        routing_decision = interpret_request_decision(
             RoutingContext(
                 message=latest_user_message,
                 dataset_columns=dataset_columns,
@@ -339,23 +339,27 @@ def dataset_context_middleware(request) -> str:
             prior_analysis_active=bool(dataset_id),
         )
         logger.debug("stats intent decision: %s", stats_decision.to_dict())
-        logger.debug("request interpretation: %s", interpretation.to_dict())
-        if interpretation.intent_type == "dataset_overview":
+        logger.debug("routing decision: %s", routing_decision.model_dump())
+        if routing_decision.primary_mode == "dataset_overview":
             route_hint = "这是数据集概览请求。优先基于当前 schema/profile 直接讲解，不要进入多余的工具循环。"
-        elif interpretation.intent_type == "ml":
+        elif routing_decision.primary_mode == "modeling":
             route_hint = (
                 "这是明确建模请求。选择最小必要步骤，"
                 "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
             )
-        elif interpretation.intent_type == "mixed":
+        elif routing_decision.primary_mode == "mixed":
             route_hint = (
                 "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
                 "不要把探索性分析直接升级成建模。"
             )
-        elif interpretation.intent_type == "chart":
+        elif routing_decision.primary_mode == "visualization":
             route_hint = "这是绘图请求。先做最小必要分析，再使用 `fig_inter` 生成图表。"
-        elif interpretation.intent_type == "followup":
+        elif routing_decision.primary_mode == "artifact_followup":
             route_hint = "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
+        elif routing_decision.primary_mode == "clarification":
+            route_hint = "当前信息不足，优先澄清用户缺失的筛选范围、目标列或预期输出，不要直接进入复杂工具循环。"
+        elif routing_decision.primary_mode == "direct_answer":
+            route_hint = "这是无需复杂工具的直接回答请求。优先简洁作答，仅在确有必要时再进入分析流程。"
         elif stats_decision.matched:
             route_hint = f"检测到统计意图（stats score={stats_decision.score:.2f}），优先使用 stats_execute。"
         else:
