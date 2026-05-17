@@ -78,6 +78,22 @@ describe('chat utils', () => {
       needs_tool_execution: false,
       needs_artifact_context: false,
       final_branch: 'dataset_overview',
+      task_plan_available: true,
+      task_plan_goal: 'Compare grouped metrics',
+      task_plan_confidence: 0.81,
+      task_plan_tasks: [
+        {
+          task_id: 'task_1',
+          task_type: 'group_aggregate',
+          description: 'Aggregate by channel_source',
+          depends_on: [],
+          required_outputs: ['group_summary_table'],
+        },
+      ],
+      task_plan_ambiguity_flags: [],
+      task_plan_assumptions: ['conversion_flag is binary'],
+      task_plan_attempted: true,
+      task_plan_generation_failed: false,
     });
 
     expect(routeInfo).not.toBeNull();
@@ -86,6 +102,11 @@ describe('chat utils', () => {
     expect(routeInfo?.requestedCapabilities).toEqual(['summarize_dataset', 'inspect_schema']);
     expect(routeInfo?.finalBranch).toBe('dataset_overview');
     expect(routeInfo?.intentType).toBe('dataset_overview');
+    expect(routeInfo?.taskPlanAvailable).toBe(true);
+    expect(routeInfo?.taskPlanGoal).toBe('Compare grouped metrics');
+    expect(routeInfo?.taskPlanTasks[0]?.taskType).toBe('group_aggregate');
+    expect(routeInfo?.taskPlanAttempted).toBe(true);
+    expect(routeInfo?.taskPlanGenerationFailed).toBe(false);
     expect(summarizeRouteInfo(routeInfo!)).toContain('数据概览');
   });
 });

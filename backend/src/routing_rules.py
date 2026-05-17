@@ -4,8 +4,9 @@ import logging
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-from src.intent_planner import IntentInterpretationPayload, plan_intent_with_llm
+from src.intent_planner import plan_intent_with_llm
 from src.routing_models import RoutingDecision
+from src.routing_projection import derive_legacy_route_projection
 from src.routing_policy import apply_routing_policy
 from src.routing_signals import (
     ANALYSIS_OPERATION_TERMS,
@@ -14,7 +15,6 @@ from src.routing_signals import (
     EXPLORATORY_ANALYSIS_TERMS,
     STATS_INTENT_WEIGHTS,
     collect_deliverables,
-    contains_any_term,
     is_chart_request,
     is_dataset_overview_request,
     is_explicit_ml_request,
@@ -324,19 +324,20 @@ def _looks_like_explicit_ml_request(context: RoutingContext) -> bool:
 
 
 def _routing_decision_to_intent_interpretation(decision: RoutingDecision) -> IntentInterpretation:
+    legacy = derive_legacy_route_projection(decision)
     return IntentInterpretation(
-        intent_type=decision.intent_type,
-        is_dataset_overview=decision.is_dataset_overview,
-        is_follow_up=decision.is_follow_up,
-        requires_ml=decision.requires_ml,
-        requires_chart=decision.requires_chart,
-        requires_python_analysis=decision.requires_python_analysis,
-        confidence=decision.confidence,
-        conflict_flags=list(decision.conflict_flags),
-        route_source=decision.route_source,
+        intent_type=legacy.intent_type,
+        is_dataset_overview=legacy.is_dataset_overview,
+        is_follow_up=legacy.is_follow_up,
+        requires_ml=legacy.requires_ml,
+        requires_chart=legacy.requires_chart,
+        requires_python_analysis=legacy.requires_python_analysis,
+        confidence=legacy.confidence,
+        conflict_flags=list(legacy.conflict_flags),
+        route_source=legacy.route_source,
         deliverables=list(decision.deliverables),
         reasoning_summary=decision.reasoning_summary,
-        suggested_plan=list(decision.suggested_plan),
+        suggested_plan=list(legacy.suggested_plan),
     )
 
 
@@ -426,17 +427,51 @@ def _heuristic_interpretation_to_routing_decision(interpretation: IntentInterpre
         ambiguity_flags=list(interpretation.conflict_flags),
         reasoning_summary=interpretation.reasoning_summary,
         execution_plan=list(interpretation.suggested_plan),
-        intent_type=interpretation.intent_type,
-        is_dataset_overview=interpretation.is_dataset_overview,
-        is_follow_up=interpretation.is_follow_up,
-        requires_ml=interpretation.requires_ml,
-        requires_chart=interpretation.requires_chart,
-        requires_python_analysis=interpretation.requires_python_analysis,
         deliverables=list(interpretation.deliverables),
-        confidence=_normalize_confidence(interpretation.confidence),
-        conflict_flags=list(interpretation.conflict_flags),
         route_source=interpretation.route_source,
-        suggested_plan=list(interpretation.suggested_plan),
+    )
+
+
+def _finalize_routing_decision(
+    *,
+    context: RoutingContext,
+    heuristic_interpretation: IntentInterpretation,
+    heuristic_decision: RoutingDecision,
+    llm_decision: RoutingDecision | None,
+) -> RoutingDecision:
+    policy_result = apply_routing_policy(
+        context=context,
+        llm_decision=llm_decision,
+        heuristic_decision=heuristic_decision,
+    )
+    final_decision = policy_result.decision
+    final_plan = _merge_suggested_plan(
+        final_decision.execution_plan or heuristic_interpretation.suggested_plan,
+        requires_ml=derive_legacy_route_projection(final_decision).requires_ml,
+        requires_chart=derive_legacy_route_projection(final_decision).requires_chart,
+        requires_python_analysis=derive_legacy_route_projection(final_decision).requires_python_analysis,
+        deliverables=final_decision.deliverables or heuristic_interpretation.deliverables,
+        follow_up_requested=derive_legacy_route_projection(final_decision).is_follow_up,
+    )
+    return final_decision.model_copy(
+        update={
+            "execution_plan": final_plan,
+        }
+    )
+
+
+def interpret_request_decision_from_llm(
+    context: RoutingContext,
+    *,
+    llm_decision: RoutingDecision | None,
+) -> RoutingDecision:
+    heuristic_interpretation = _heuristic_interpret_request(context)
+    heuristic_decision = _heuristic_interpretation_to_routing_decision(heuristic_interpretation)
+    return _finalize_routing_decision(
+        context=context,
+        heuristic_interpretation=heuristic_interpretation,
+        heuristic_decision=heuristic_decision,
+        llm_decision=llm_decision,
     )
 
 
@@ -451,26 +486,11 @@ def interpret_request_decision(context: RoutingContext, *, use_llm: bool = True)
         dataset_columns=context.dataset_columns,
         prior_analysis_active=context.prior_analysis_active,
     )
-    policy_result = apply_routing_policy(
+    return _finalize_routing_decision(
         context=context,
-        llm_decision=llm_decision,
+        heuristic_interpretation=heuristic_interpretation,
         heuristic_decision=heuristic_decision,
-    )
-    final_decision = policy_result.decision
-    final_plan = _merge_suggested_plan(
-        final_decision.suggested_plan or final_decision.execution_plan or heuristic_interpretation.suggested_plan,
-        requires_ml=final_decision.requires_ml,
-        requires_chart=final_decision.requires_chart,
-        requires_python_analysis=final_decision.requires_python_analysis,
-        deliverables=final_decision.deliverables or heuristic_interpretation.deliverables,
-        follow_up_requested=final_decision.is_follow_up,
-    )
-    return final_decision.model_copy(
-        update={
-            "confidence": _normalize_confidence(final_decision.confidence_band),
-            "suggested_plan": final_plan,
-            "execution_plan": final_plan,
-        }
+        llm_decision=llm_decision,
     )
 
 

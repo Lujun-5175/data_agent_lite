@@ -12,13 +12,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from src.data_manager import get_data_context_summary, get_dataset
-from src.result_types import get_artifact_repository
 from src.routing_rules import (
     RoutingContext,
     decide_dataset_required,
     decide_ml_intent,
     decide_stats_intent,
-    interpret_request_decision,
 )
 from src.settings import SETTINGS
 from src.tools import (
@@ -39,6 +37,10 @@ DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 class AgentContext(BaseModel):
     dataset_id: str | None = Field(default=None, description="当前分析的数据集 ID")
+    routing_decision: dict[str, Any] | None = Field(
+        default=None,
+        description="由 chat_service 预先生成的路由决策",
+    )
 
 
 def _extract_dataset_id_from_value(value: object) -> str | None:
@@ -99,6 +101,90 @@ def _extract_dataset_id(request) -> str | None:
         )
         return dataset_id
     return None
+
+
+def _normalize_dict_like(value: object) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump()
+        if isinstance(dumped, dict):
+            return dumped
+    return None
+
+
+def _extract_routing_decision_from_value(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, AgentContext):
+        return _normalize_dict_like(value.routing_decision)
+    if isinstance(value, dict):
+        routing_decision = value.get("routing_decision")
+        if routing_decision is not None:
+            normalized = _normalize_dict_like(routing_decision)
+            if normalized is not None:
+                return normalized
+        configurable = value.get("configurable")
+        if isinstance(configurable, dict):
+            nested = configurable.get("routing_decision")
+            normalized = _normalize_dict_like(nested)
+            if normalized is not None:
+                return normalized
+        return None
+    direct_routing_decision = getattr(value, "routing_decision", None)
+    normalized = _normalize_dict_like(direct_routing_decision)
+    if normalized is not None:
+        return normalized
+    configurable = getattr(value, "configurable", None)
+    if isinstance(configurable, dict):
+        nested = configurable.get("routing_decision")
+        normalized = _normalize_dict_like(nested)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
+    if not routing_decision:
+        return "当前没有预先注入 routing_decision，请按最小必要步骤处理。"
+
+    primary_mode = str(routing_decision.get("primary_mode", "")).strip()
+    requested_capabilities = {
+        str(capability).strip()
+        for capability in routing_decision.get("requested_capabilities", [])
+        if isinstance(capability, str) and capability.strip()
+    }
+
+    if primary_mode == "dataset_overview":
+        return "这是数据集概览请求。优先基于当前 schema/profile 直接讲解，不要进入多余的工具循环。"
+    if primary_mode == "modeling":
+        return (
+            "这是明确建模请求。选择最小必要步骤，"
+            "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
+        )
+    if primary_mode == "mixed":
+        return (
+            "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
+            "不要把探索性分析直接升级成建模。"
+        )
+    if primary_mode == "visualization":
+        return "这是绘图请求。先做最小必要分析，再使用 `fig_inter` 生成图表。"
+    if primary_mode == "artifact_followup":
+        return "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
+    if primary_mode == "clarification":
+        return "当前信息不足，优先澄清用户缺失的筛选范围、目标列或预期输出，不要直接进入复杂工具循环。"
+    if primary_mode == "direct_answer":
+        return "这是无需复杂工具的直接回答请求。优先简洁作答，仅在确有必要时再进入分析流程。"
+
+    if requested_capabilities.intersection({"stat_test", "group_analysis", "python_analysis"}):
+        return "检测到统计/探索性分析意图，优先使用 stats_execute 或 python_inter，避免不必要的建模。"
+
+    return (
+        "先根据 routing_decision 选择最小必要工具。"
+        "统计问题优先 stats_execute，探索性分析优先 python_inter，"
+        "明确建模请求才使用 `ml_execute`，绘图需求使用 `fig_inter`。"
+    )
 
 
 model = ChatDeepSeek(
@@ -297,77 +383,21 @@ async def generate_general_chat_reply(messages: list[dict[str, Any]]) -> str:
 @dynamic_prompt
 def dataset_context_middleware(request) -> str:
     dataset_id = _extract_dataset_id(request)
+    routing_decision = None
+    runtime = getattr(request, "runtime", None)
+    if runtime is not None:
+        routing_decision = _extract_routing_decision_from_value(getattr(runtime, "context", None))
     with bind_current_dataset_id(dataset_id):
-        runtime = getattr(request, "runtime", None)
-        latest_user_message = ""
-        if runtime is not None:
-            runtime_input = getattr(runtime, "input", None)
-            if isinstance(runtime_input, dict):
-                raw_messages = runtime_input.get("messages")
-                if isinstance(raw_messages, list):
-                    for msg in reversed(raw_messages):
-                        if isinstance(msg, dict) and msg.get("type") in {"human", "user"}:
-                            content = msg.get("content")
-                            if isinstance(content, str):
-                                latest_user_message = content
-                                break
-
-        dataset_columns: list[str] = []
         if dataset_id:
             dataset = get_dataset(dataset_id)
-            dataset_columns = [column["name"] for column in dataset.columns if "name" in column]
             data_context = _format_dataset_context_summary(get_data_context_summary(dataset_id))
             dataset_scope = f"当前数据集 dataset_id: {dataset_id}，分析基于 {dataset.analysis_basis}。"
-            latest_artifact = get_artifact_repository().get_latest(dataset_id)
         else:
             data_context = "当前未选择数据集。普通聊天可以继续进行；如果用户需要分析具体数据，请先上传 CSV 文件。"
             dataset_scope = "当前没有可用数据集。普通聊天可直接回答，数据分析需先上传 CSV。"
-            latest_artifact = None
 
-        routing_decision = interpret_request_decision(
-            RoutingContext(
-                message=latest_user_message,
-                dataset_columns=dataset_columns,
-                prior_analysis_active=bool(dataset_id),
-                latest_artifact=latest_artifact,
-            ),
-            use_llm=False,
-        )
-        stats_decision = get_stats_intent_decision(
-            latest_user_message,
-            dataset_columns=dataset_columns,
-            prior_analysis_active=bool(dataset_id),
-        )
-        logger.debug("stats intent decision: %s", stats_decision.to_dict())
-        logger.debug("routing decision: %s", routing_decision.model_dump())
-        if routing_decision.primary_mode == "dataset_overview":
-            route_hint = "这是数据集概览请求。优先基于当前 schema/profile 直接讲解，不要进入多余的工具循环。"
-        elif routing_decision.primary_mode == "modeling":
-            route_hint = (
-                "这是明确建模请求。选择最小必要步骤，"
-                "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
-            )
-        elif routing_decision.primary_mode == "mixed":
-            route_hint = (
-                "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
-                "不要把探索性分析直接升级成建模。"
-            )
-        elif routing_decision.primary_mode == "visualization":
-            route_hint = "这是绘图请求。先做最小必要分析，再使用 `fig_inter` 生成图表。"
-        elif routing_decision.primary_mode == "artifact_followup":
-            route_hint = "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
-        elif routing_decision.primary_mode == "clarification":
-            route_hint = "当前信息不足，优先澄清用户缺失的筛选范围、目标列或预期输出，不要直接进入复杂工具循环。"
-        elif routing_decision.primary_mode == "direct_answer":
-            route_hint = "这是无需复杂工具的直接回答请求。优先简洁作答，仅在确有必要时再进入分析流程。"
-        elif stats_decision.matched:
-            route_hint = f"检测到统计意图（stats score={stats_decision.score:.2f}），优先使用 stats_execute。"
-        else:
-            route_hint = (
-                "先根据 interpretation 选择最小必要工具。"
-                "统计问题优先 stats_execute，探索性分析优先 python_inter，"
-                "明确建模请求才使用 `ml_execute`，绘图需求使用 `fig_inter`。"
-            )
+        route_hint = _build_route_hint(routing_decision)
+        logger.debug("routing decision: %s", routing_decision)
 
         return f"""你是 Data Agent 的高级数据分析助手。你的首要目标是：结果正确、过程可复核、表达清晰。
 

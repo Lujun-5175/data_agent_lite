@@ -155,7 +155,57 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
                 </div>
                 <div className="mt-1">Guardrail 动作：{message.routeInfo.guardrailActions.length > 0 ? message.routeInfo.guardrailActions.join(', ') : '无'}</div>
                 <div className="mt-1">回退原因：{message.routeInfo.fallbackReasons.length > 0 ? message.routeInfo.fallbackReasons.join(', ') : '无'}</div>
-                <div className="mt-1">系统计划：{message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : '无'}</div>
+                <div className="mt-2 border-t border-slate-200/80 pt-2">
+                  <div>
+                    统一计划状态：
+                    {message.routeInfo.taskPlanAvailable
+                      ? '已生成'
+                      : message.routeInfo.taskPlanGenerationFailed
+                        ? '生成失败'
+                        : message.routeInfo.taskPlanAttempted
+                          ? '未生成'
+                          : '未尝试'}
+                  </div>
+                  <div className="mt-1">计划目标：{message.routeInfo.taskPlanGoal || '无'}</div>
+                  <div className="mt-1">
+                    计划置信度：
+                    {typeof message.routeInfo.taskPlanConfidence === 'number'
+                      ? message.routeInfo.taskPlanConfidence.toFixed(2)
+                      : '未提供'}
+                  </div>
+                  <div className="mt-1">
+                    计划歧义：
+                    {message.routeInfo.taskPlanAmbiguityFlags.length > 0 ? message.routeInfo.taskPlanAmbiguityFlags.join(', ') : '无'}
+                  </div>
+                  <div className="mt-1">
+                    计划假设：
+                    {message.routeInfo.taskPlanAssumptions.length > 0 ? message.routeInfo.taskPlanAssumptions.join('；') : '无'}
+                  </div>
+                  <div className="mt-1">
+                    任务列表：
+                    {message.routeInfo.taskPlanTasks.length > 0 ? (
+                      <div className="mt-1 space-y-1">
+                        {message.routeInfo.taskPlanTasks.map((task) => (
+                          <div key={`${task.taskId}-${task.taskType}`} className="rounded border border-slate-200 bg-white/60 px-2 py-1">
+                            <div>{task.taskId || 'task'} · {task.taskType || 'unknown'}</div>
+                            <div>{task.description || '无描述'}</div>
+                            <div>依赖：{task.dependsOn.length > 0 ? task.dependsOn.join(', ') : '无'}</div>
+                            <div>产物：{task.requiredOutputs.length > 0 ? task.requiredOutputs.join(', ') : '无'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      '无'
+                    )}
+                  </div>
+                  <div className="mt-2 border-t border-slate-200/80 pt-2">
+                    <div className="font-medium text-slate-700">调试信息</div>
+                    <div className="mt-1">
+                      旧路由步骤：
+                      {message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : '无'}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

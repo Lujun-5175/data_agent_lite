@@ -95,6 +95,33 @@ export function normalizeRouteInfo(payload: Record<string, unknown>): RouteInfo 
     needsToolExecution: payload.needs_tool_execution === true,
     needsArtifactContext: payload.needs_artifact_context === true,
     finalBranch,
+    taskPlanAvailable: payload.task_plan_available === true,
+    taskPlanGoal: typeof payload.task_plan_goal === 'string' ? payload.task_plan_goal : '',
+    taskPlanConfidence: typeof payload.task_plan_confidence === 'number' ? payload.task_plan_confidence : null,
+    taskPlanTasks: Array.isArray(payload.task_plan_tasks)
+      ? payload.task_plan_tasks
+          .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+          .map((item) => ({
+            taskId: typeof item.task_id === 'string' ? item.task_id : '',
+            taskType: typeof item.task_type === 'string' ? item.task_type : '',
+            description: typeof item.description === 'string' ? item.description : '',
+            dependsOn: Array.isArray(item.depends_on)
+              ? item.depends_on.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+              : [],
+            requiredOutputs: Array.isArray(item.required_outputs)
+              ? item.required_outputs.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+              : [],
+          }))
+          .filter((item) => item.taskId || item.taskType || item.description)
+      : [],
+    taskPlanAmbiguityFlags: Array.isArray(payload.task_plan_ambiguity_flags)
+      ? payload.task_plan_ambiguity_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    taskPlanAssumptions: Array.isArray(payload.task_plan_assumptions)
+      ? payload.task_plan_assumptions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    taskPlanAttempted: payload.task_plan_attempted === true,
+    taskPlanGenerationFailed: payload.task_plan_generation_failed === true,
   };
 }
 

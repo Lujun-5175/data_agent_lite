@@ -11,9 +11,9 @@ backend_path = str(BACKEND_DIR)
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-from src import chat_service, intent_planner, server, tools
-from src.data_manager import cleanup_dataset_artifacts, dataset_store
-from src.server import app
+from src import chat_service, intent_planner, server, tools  # noqa: E402
+from src.data_manager import cleanup_dataset_artifacts, dataset_store  # noqa: E402
+from src.server import app  # noqa: E402
 
 
 def _cleanup_all_datasets() -> None:

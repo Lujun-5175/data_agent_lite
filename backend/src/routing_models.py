@@ -28,7 +28,6 @@ RoutingPrimaryMode = Literal[
     "mixed",
     "clarification",
 ]
-IntentType = Literal["analysis", "ml", "chart", "mixed", "followup", "dataset_overview"]
 RouteSource = Literal["llm_primary", "llm_with_guardrail", "heuristic_fallback"]
 
 
@@ -47,16 +46,5 @@ class RoutingDecision(BaseModel):
     fallback_reasons: list[str] = Field(default_factory=list)
     reasoning_summary: str = ""
     execution_plan: list[str] = Field(default_factory=list)
-
-    # Compatibility fields retained for the existing execution flow.
-    intent_type: IntentType = "analysis"
-    is_dataset_overview: bool = False
-    is_follow_up: bool = False
-    requires_ml: bool = False
-    requires_chart: bool = False
-    requires_python_analysis: bool = False
     deliverables: list[str] = Field(default_factory=list)
-    confidence: ConfidenceBand = "medium"
-    conflict_flags: list[str] = Field(default_factory=list)
     route_source: RouteSource = "llm_primary"
-    suggested_plan: list[str] = Field(default_factory=list)

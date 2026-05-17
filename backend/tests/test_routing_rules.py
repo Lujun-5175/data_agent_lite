@@ -344,5 +344,5 @@ def test_policy_keeps_llm_primary_when_medium_confidence_has_only_soft_ambiguity
     decision = interpret_request_decision(RoutingContext(message="讲解一下这个数据集"))
 
     assert decision.route_source == "llm_primary"
-    assert "dataset_overview_missed" in decision.conflict_flags
+    assert "dataset_overview_missed" in decision.ambiguity_flags
     assert decision.fallback_reasons == []

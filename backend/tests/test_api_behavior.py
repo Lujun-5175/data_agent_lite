@@ -99,7 +99,7 @@ def test_dataset_overview_request_streams_metadata_without_agent_loop(client: Te
     assert "sales_sample.csv" in response.text
     assert "2 行" in response.text
     assert "5 列" in response.text
-    assert "每月销售额趋势是什么" in response.text
+    assert "你可以直接点上方推荐问题" in response.text
     assert "internal_error" not in response.text
 
 
@@ -180,5 +180,5 @@ def test_dataset_overview_request_writes_chat_route_audit(client: TestClient, mo
     records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
     route_record = next(record for record in records if record["tool_name"] == "chat_route")
     assert route_record["tool_args"]["is_dataset_overview"] is True
-    assert route_record["extra"]["routing"]["final_intent"] in {"analysis", "followup"}
+    assert route_record["extra"]["routing"]["final_intent"] == "dataset_overview"
     assert route_record["extra"]["routing"]["conflict_flags"] is not None

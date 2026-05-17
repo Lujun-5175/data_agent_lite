@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from src.routing_models import RoutingDecision
+from src.routing_projection import derive_legacy_route_projection
 from src.routing_signals import is_dataset_overview_request, is_explicit_ml_request, is_follow_up_request, normalize_message_text
 
 
@@ -27,7 +28,6 @@ def apply_routing_policy(
             update={
                 "route_source": "heuristic_fallback",
                 "ambiguity_flags": [],
-                "conflict_flags": [],
                 "guardrail_actions": [],
                 "fallback_reasons": ["llm_unavailable"],
             }
@@ -40,7 +40,6 @@ def apply_routing_policy(
 
     ambiguity_flags = _merge_unique(
         list(llm_decision.ambiguity_flags),
-        list(llm_decision.conflict_flags),
         _detect_ambiguity_flags(context=context, llm_decision=llm_decision, heuristic_decision=heuristic_decision),
     )
     hard_constraint_reasons = _detect_hard_constraint_reasons(context=context, llm_decision=llm_decision)
@@ -57,7 +56,6 @@ def apply_routing_policy(
             update={
                 "route_source": "llm_with_guardrail",
                 "ambiguity_flags": ambiguity_flags,
-                "conflict_flags": ambiguity_flags,
                 "guardrail_actions": guardrail_actions,
                 "fallback_reasons": fallback_reasons,
                 "reasoning_summary": _build_fallback_reasoning(
@@ -81,7 +79,6 @@ def apply_routing_policy(
         update={
             "route_source": "llm_primary",
             "ambiguity_flags": ambiguity_flags,
-            "conflict_flags": ambiguity_flags,
             "guardrail_actions": [],
             "fallback_reasons": [],
         }
@@ -99,17 +96,19 @@ def _detect_ambiguity_flags(*, context, llm_decision: RoutingDecision, heuristic
     explicit_ml_requested = is_explicit_ml_request(normalized)
     follow_up_requested = is_follow_up_request(normalized, latest_artifact=context.latest_artifact)
     dataset_overview_requested = is_dataset_overview_request(normalized)
+    llm_legacy = derive_legacy_route_projection(llm_decision)
+    heuristic_legacy = derive_legacy_route_projection(heuristic_decision)
 
     ambiguity_flags: list[str] = []
-    if dataset_overview_requested and not llm_decision.is_dataset_overview:
+    if dataset_overview_requested and not llm_legacy.is_dataset_overview:
         ambiguity_flags.append("dataset_overview_missed")
-    if follow_up_requested and not llm_decision.is_follow_up:
+    if follow_up_requested and not llm_legacy.is_follow_up:
         ambiguity_flags.append("follow_up_missed")
-    if explicit_ml_requested and not llm_decision.requires_ml:
+    if explicit_ml_requested and not llm_legacy.requires_ml:
         ambiguity_flags.append("explicit_ml_missed")
-    if heuristic_decision.requires_chart and not llm_decision.requires_chart:
+    if heuristic_legacy.requires_chart and not llm_legacy.requires_chart:
         ambiguity_flags.append("chart_request_missed")
-    if llm_decision.requires_ml and not explicit_ml_requested and heuristic_decision.intent_type in {"analysis", "followup", "dataset_overview"}:
+    if llm_legacy.requires_ml and not explicit_ml_requested and heuristic_legacy.intent_type in {"analysis", "followup", "dataset_overview"}:
         ambiguity_flags.append("ml_overcall")
     if llm_decision.primary_mode == "clarification":
         ambiguity_flags.append("clarification_requested")

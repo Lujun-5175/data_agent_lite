@@ -8,9 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from langgraph.errors import GraphRecursionError
 
-from src import server
+from src import chat_service, intent_planner, server
 from src.agent import _format_dataset_context_summary
 from src.data_manager import get_data_context_summary
+from src.routing_models import RoutingDecision
+from src.task_plan_models import TaskPlan, TaskSpec
 from src.tools import _serialize_tool_error
 
 
@@ -23,6 +25,19 @@ def _upload_fixture_dataset(client: TestClient) -> str:
         "2024-01-02,US,Texas,u4,50,1,no,monthly\n"
     ).encode("utf-8")
     response = client.post("/upload", files={"file": ("golden.csv", csv_content, "text/csv")})
+    assert response.status_code == 200
+    return str(response.json()["dataset_id"])
+
+
+def _upload_plan_execution_dataset(client: TestClient) -> str:
+    csv_content = (
+        "channel_source,session_count,page_views,conversion_flag,ab_group\n"
+        "organic,2,5,1,A\n"
+        "organic,4,8,0,B\n"
+        "paid,6,10,1,A\n"
+        "paid,8,12,1,B\n"
+    ).encode("utf-8")
+    response = client.post("/upload", files={"file": ("plan.csv", csv_content, "text/csv")})
     assert response.status_code == 200
     return str(response.json()["dataset_id"])
 
@@ -47,9 +62,13 @@ def _parse_sse(response_text: str) -> list[tuple[str, dict[str, Any]]]:
 class _CaptureGraph:
     def __init__(self) -> None:
         self.last_inputs: dict[str, Any] | None = None
+        self.last_context: Any | None = None
+        self.calls = 0
 
     async def astream_events(self, inputs: dict[str, Any], config: dict[str, Any], context: Any, version: str):
+        self.calls += 1
         self.last_inputs = inputs
+        self.last_context = context
         yield {"event": "on_chain_end", "name": "capture", "data": {}}
 
 
@@ -133,6 +152,25 @@ def test_long_history_is_compressed_before_graph(monkeypatch: pytest.MonkeyPatch
     compressed_messages = capture_graph.last_inputs["messages"]
     assert len(compressed_messages) <= 8
     assert "会话摘要" in compressed_messages[0]["content"]
+
+
+def test_graph_receives_precomputed_routing_decision(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    capture_graph = _CaptureGraph()
+    monkeypatch.setattr(server, "graph", capture_graph)
+    dataset_id = _upload_fixture_dataset(client)
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "分析一下 churn"}]},
+        },
+    )
+    assert response.status_code == 200
+    assert capture_graph.last_context is not None
+    assert capture_graph.last_context.dataset_id == dataset_id
+    assert isinstance(capture_graph.last_context.routing_decision, dict)
+    assert "primary_mode" in capture_graph.last_context.routing_decision
 
 
 def test_simple_mode_preserves_summary_and_latest_user_message(monkeypatch: pytest.MonkeyPatch, client: TestClient):
@@ -293,6 +331,389 @@ def test_dataset_overview_variants_stream_metadata_without_agent_loop(query: str
     assert "你可以直接点上方推荐问题" in text
     assert not [payload for event_type, payload in events if event_type in {"tool_start", "tool_end"}]
     assert "internal_error" not in response.text
+
+
+def test_route_info_includes_task_plan_metadata(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    dataset_id = _upload_fixture_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="analysis",
+                confidence_score=0.84,
+                confidence_band="high",
+                needs_dataset=True,
+                needs_tool_execution=True,
+                needs_artifact_context=False,
+                requested_capabilities=["group_analysis", "stat_test", "python_analysis"],
+                ambiguity_flags=[],
+                guardrail_actions=[],
+                fallback_reasons=[],
+                reasoning_summary="用户需要分析 A/B 组差异。",
+                execution_plan=["group rows", "compare rates"],
+                deliverables=["summary"],
+                route_source="llm_primary",
+            ),
+            task_plan=TaskPlan(
+                goal="比较 A/B 组转化差异并补充均值统计",
+                planning_confidence=0.83,
+                assumptions=["conversion_flag 为二元转化标记"],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="group_aggregate",
+                        description="比较 ab_group 的 conversion_flag 转化率",
+                        inputs={"group_by": ["ab_group"]},
+                        required_outputs=["conversion_rate_comparison"],
+                    ),
+                    TaskSpec(
+                        task_id="task_2",
+                        task_type="python_analysis",
+                        description="执行卡方检验评估差异显著性",
+                        inputs={"test": "chi_square"},
+                        depends_on=["task_1"],
+                        required_outputs=["chi_square_result"],
+                    ),
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "分析 ab_group 中 A/B 的 conversion_flag 差异"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    route_info = next(payload for event_type, payload in events if event_type == "route_info")
+    assert route_info["task_plan_available"] is True
+    assert route_info["task_plan_goal"] == "比较 A/B 组转化差异并补充均值统计"
+    assert route_info["task_plan_confidence"] == pytest.approx(0.83)
+    assert route_info["task_plan_tasks"][0]["task_type"] == "group_aggregate"
+    assert route_info["task_plan_tasks"][1]["depends_on"] == ["task_1"]
+
+
+def test_analyze_chat_request_attaches_task_plan(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    dataset_id = _upload_fixture_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="analysis",
+                confidence_score=0.81,
+                confidence_band="high",
+                needs_dataset=True,
+                needs_tool_execution=True,
+                needs_artifact_context=False,
+                requested_capabilities=["group_analysis", "python_analysis"],
+                ambiguity_flags=[],
+                guardrail_actions=[],
+                fallback_reasons=[],
+                reasoning_summary="用户需要按渠道分组分析。",
+                execution_plan=["group rows", "summarize metrics"],
+                deliverables=["summary"],
+                route_source="llm_primary",
+            ),
+            task_plan=TaskPlan(
+                goal="按 channel_source 分组统计均值和转化率",
+                planning_confidence=0.79,
+                assumptions=[],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="group_aggregate",
+                        description="按渠道统计 session_count/page_views 均值和 conversion_flag 转化率",
+                        inputs={"group_by": ["channel_source"]},
+                        required_outputs=["group_summary_table"],
+                    )
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    requirements = chat_service.analyze_chat_request(
+        {
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {
+                "messages": [
+                    {
+                        "type": "human",
+                        "content": "按 channel_source 分组，统计 session_count、page_views 均值，并比较 conversion_flag 转化率",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert requirements.task_plan is not None
+    assert requirements.task_plan.goal == "按 channel_source 分组统计均值和转化率"
+    assert requirements.task_plan.tasks[0].task_type == "group_aggregate"
+
+
+def test_supported_task_plan_executes_before_graph(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    capture_graph = _CaptureGraph()
+    monkeypatch.setattr(server, "graph", capture_graph)
+    dataset_id = _upload_plan_execution_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="analysis",
+                confidence_score=0.88,
+                confidence_band="high",
+                needs_dataset=True,
+                needs_tool_execution=True,
+                needs_artifact_context=False,
+                requested_capabilities=["group_analysis", "python_analysis"],
+                ambiguity_flags=[],
+                guardrail_actions=[],
+                fallback_reasons=[],
+                reasoning_summary="用户需要按渠道分组统计。",
+                execution_plan=["group rows", "summarize metrics"],
+                deliverables=["summary"],
+                route_source="llm_primary",
+            ),
+            task_plan=TaskPlan(
+                goal="按 channel_source 分组统计均值和转化率",
+                planning_confidence=0.84,
+                assumptions=["conversion_flag 为 0/1 二元列"],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="group_aggregate",
+                        description="按渠道统计 session_count/page_views 均值和 conversion_flag 转化率",
+                        inputs={
+                            "group_by": ["channel_source"],
+                            "metrics": [
+                                {"column": "session_count", "agg": "mean"},
+                                {"column": "page_views", "agg": "mean"},
+                                {"column": "conversion_flag", "agg": "mean", "semantic": "rate"},
+                            ],
+                        },
+                        required_outputs=["group_summary_table"],
+                    )
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "按 channel_source 分组分析 session_count 和转化率"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    route_info = next(payload for event_type, payload in events if event_type == "route_info")
+    assert route_info["final_branch"] == "plan_execution"
+    text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
+    assert "已按统一计划执行" in text
+    assert "channel_source" in text
+    assert "conversion_flag_rate" in text
+    assert capture_graph.calls == 0
+
+
+def test_unsupported_task_plan_falls_back_to_graph(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    capture_graph = _CaptureGraph()
+    monkeypatch.setattr(server, "graph", capture_graph)
+    dataset_id = _upload_plan_execution_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="analysis",
+                confidence_score=0.79,
+                confidence_band="high",
+                needs_dataset=True,
+                needs_tool_execution=True,
+                needs_artifact_context=False,
+                requested_capabilities=["group_analysis", "stat_test"],
+                ambiguity_flags=[],
+                guardrail_actions=[],
+                fallback_reasons=[],
+                reasoning_summary="用户需要比较分组差异。",
+                execution_plan=["compare groups", "run test"],
+                deliverables=["summary"],
+                route_source="llm_primary",
+            ),
+            task_plan=TaskPlan(
+                goal="比较 A/B 组转化差异",
+                planning_confidence=0.8,
+                assumptions=[],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="python_analysis",
+                        description="执行卡方检验",
+                        inputs={"test": "chi_square"},
+                        required_outputs=["chi_square_result"],
+                    )
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "比较 A/B 组差异"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    route_info = next(payload for event_type, payload in events if event_type == "route_info")
+    assert route_info["final_branch"] == "agent_graph"
+    assert capture_graph.calls == 1
+
+
+def test_plan_verifier_reports_incomplete_required_outputs(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    capture_graph = _CaptureGraph()
+    monkeypatch.setattr(server, "graph", capture_graph)
+    dataset_id = _upload_plan_execution_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="analysis",
+                confidence_score=0.82,
+                confidence_band="high",
+                needs_dataset=True,
+                needs_tool_execution=True,
+                needs_artifact_context=False,
+                requested_capabilities=["group_analysis"],
+                ambiguity_flags=[],
+                guardrail_actions=[],
+                fallback_reasons=[],
+                reasoning_summary="用户需要输出分组结果表。",
+                execution_plan=["summarize dataset"],
+                deliverables=["summary"],
+                route_source="llm_primary",
+            ),
+            task_plan=TaskPlan(
+                goal="输出数据集概况并返回分组结果表",
+                planning_confidence=0.74,
+                assumptions=[],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="dataset_summary",
+                        description="输出数据集概况",
+                        inputs={},
+                        required_outputs=["group_summary_table"],
+                    )
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "给我一个分组结果表"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    route_info = next(payload for event_type, payload in events if event_type == "route_info")
+    assert route_info["final_branch"] == "plan_execution"
+    error_payload = next(payload for event_type, payload in events if event_type == "error")
+    assert error_payload["code"] == "task_plan_incomplete"
+    assert error_payload["stage"] == "plan_verification"
+    assert "group_summary_table" in error_payload["message"]
+    assert capture_graph.calls == 0
+
+
+def test_direct_answer_route_invalidates_group_plan_and_skips_plan_execution(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
+    capture_graph = _CaptureGraph()
+    monkeypatch.setattr(server, "graph", capture_graph)
+    dataset_id = _upload_plan_execution_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="direct_answer",
+                confidence_score=0.91,
+                confidence_band="high",
+                needs_dataset=False,
+                needs_tool_execution=False,
+                needs_artifact_context=False,
+                requested_capabilities=["direct_answer"],
+                ambiguity_flags=[],
+                guardrail_actions=[],
+                fallback_reasons=[],
+                reasoning_summary="用户在问概念解释。",
+                execution_plan=["answer directly"],
+                deliverables=["summary"],
+                route_source="llm_primary",
+            ),
+            task_plan=TaskPlan(
+                goal="错误地附带分析任务",
+                planning_confidence=0.8,
+                assumptions=[],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="group_aggregate",
+                        description="按渠道分组",
+                        inputs={"group_by": ["channel_source"]},
+                        required_outputs=["group_summary_table"],
+                    )
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "解释一下 conversion_flag 是什么意思"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    route_info = next(payload for event_type, payload in events if event_type == "route_info")
+    assert route_info["final_branch"] == "direct_answer"
+    assert route_info["task_plan_available"] is False
+    assert capture_graph.calls == 0
 
 
 def test_long_history_summary_keeps_older_constraints(client: TestClient):

@@ -2,6 +2,14 @@ import type { UploadedDataset } from '../../types/data';
 
 export type MessageKind = 'text' | 'status' | 'error' | 'image' | 'dataset_card';
 
+export interface RouteTaskInfo {
+  taskId: string;
+  taskType: string;
+  description: string;
+  dependsOn: string[];
+  requiredOutputs: string[];
+}
+
 export interface RouteInfo {
   primaryMode: string;
   confidenceScore: number | null;
@@ -22,6 +30,14 @@ export interface RouteInfo {
   needsToolExecution: boolean;
   needsArtifactContext: boolean;
   finalBranch: string;
+  taskPlanAvailable: boolean;
+  taskPlanGoal: string;
+  taskPlanConfidence: number | null;
+  taskPlanTasks: RouteTaskInfo[];
+  taskPlanAmbiguityFlags: string[];
+  taskPlanAssumptions: string[];
+  taskPlanAttempted: boolean;
+  taskPlanGenerationFailed: boolean;
 }
 
 export interface ChatMessage {

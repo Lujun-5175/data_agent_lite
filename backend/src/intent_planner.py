@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -11,6 +12,7 @@ from langchain_deepseek import ChatDeepSeek
 from pydantic import ValidationError
 
 from src.routing_models import ConfidenceBand, RoutingCapability, RoutingDecision, RoutingPrimaryMode
+from src.task_plan_models import TaskPlan, TaskSpec, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,40 @@ ROUTING_SYSTEM_PROMPT = (
     "7) 若信息明显不足以安全路由，使用 clarification。"
     "8) execution_plan 用简短步骤描述后续应做什么。"
 )
+
+UNIFIED_PLANNER_SYSTEM_PROMPT = (
+    "你是 Data Agent 的统一结构化规划器。"
+    "你的任务是一次性输出两个层次："
+    "1) routing_decision：稳定的路由决策；"
+    "2) task_plan：可选的结构化任务计划。"
+    "只输出 JSON，不要输出 markdown、解释文本或多余前后缀。"
+    "顶层必须输出字段：routing_decision, task_plan。"
+    "routing_decision 必须包含：primary_mode, confidence_score, confidence_band, needs_dataset, needs_tool_execution, "
+    "needs_artifact_context, requested_capabilities, ambiguity_flags, reasoning_summary, execution_plan。"
+    "primary_mode 只能是 direct_answer, dataset_overview, analysis, visualization, modeling, artifact_followup, mixed, clarification。"
+    "requested_capabilities 只能使用这些值或其子集："
+    "summarize_dataset, inspect_schema, reuse_prior_artifact, group_analysis, stat_test, python_analysis, "
+    "chart_generation, train_model, evaluate_model, feature_importance, direct_answer。"
+    "task_plan 可以为 null；如果提供，必须包含字段：goal, planning_confidence, assumptions, ambiguity_flags, tasks, final_response_style。"
+    "tasks 中每个 task 必须包含：task_id, task_type, description, inputs, depends_on, required_outputs, can_retry。"
+    "task_type 只能使用：dataset_summary, group_aggregate, artifact_lookup, python_analysis, model_train, direct_answer, clarification。"
+    "判定原则："
+    "1) 普通问答、概念解释、无需数据与工具时，优先 direct_answer，task_plan 可为空。"
+    "2) 用户主要要求讲解当前数据集、字段、预处理与推荐方向时，优先 dataset_overview。"
+    "3) 用户明显引用上一个结果、模型、图表或 artifact 时，优先 artifact_followup，并设置 needs_artifact_context=true。"
+    "4) 用户要求统计分析、分组比较、探索关系、过滤聚合时，优先 analysis。"
+    "5) 用户要求画图或可视化时，优先 visualization；若同时包含明显分析步骤，可判 mixed。"
+    "6) 只有当用户明确要求训练模型、预测、模型评估、特征重要性时，才优先 modeling。"
+    "7) 若信息明显不足以安全规划，使用 clarification，并优先给出 clarification task。"
+    "8) task_plan 中不要编造不存在的列名、artifact、统计结果或模型指标。"
+    "9) 分组比较优先表示为 group_aggregate；统计检验、相关性、图表和其他非标准分析优先表示为 python_analysis；模型评估并入 model_train。"
+)
+
+
+@dataclass(slots=True)
+class UnifiedPlanningResult:
+    routing_decision: RoutingDecision | None
+    task_plan: TaskPlan | None
 
 
 def _build_model() -> Any | None:
@@ -188,6 +224,166 @@ def _normalize_capabilities(values: Any) -> list[RoutingCapability]:
         if capability and capability not in normalized:
             normalized.append(capability)
     return normalized
+
+
+def _normalize_task_type(value: Any) -> TaskType | None:
+    token = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    mapping: dict[str, TaskType] = {
+        "dataset_summary": "dataset_summary",
+        "group_aggregate": "group_aggregate",
+        "group_comparison": "group_aggregate",
+        "stat_test": "python_analysis",
+        "correlation": "python_analysis",
+        "chart": "python_analysis",
+        "python_analysis": "python_analysis",
+        "artifact_lookup": "artifact_lookup",
+        "direct_answer": "direct_answer",
+        "clarification": "clarification",
+        "model_train": "model_train",
+        "model_eval": "model_train",
+    }
+    return mapping.get(token)
+
+
+def _normalize_metric_list(values: Any) -> list[dict[str, Any]]:
+    if not isinstance(values, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        column = str(value.get("column") or "").strip()
+        agg = str(value.get("agg") or "").strip().lower()
+        if not column or not agg:
+            continue
+        item: dict[str, Any] = {"column": column, "agg": agg}
+        semantic = value.get("semantic")
+        if isinstance(semantic, str) and semantic.strip():
+            item["semantic"] = semantic.strip()
+        normalized.append(item)
+    return normalized
+
+
+def _normalize_task_inputs(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    inputs = dict(value)
+    if "metrics" in inputs:
+        inputs["metrics"] = _normalize_metric_list(inputs.get("metrics"))
+    if "group_by" in inputs and isinstance(inputs["group_by"], str):
+        inputs["group_by"] = [inputs["group_by"].strip()] if inputs["group_by"].strip() else []
+    if "depends_on" in inputs:
+        inputs.pop("depends_on", None)
+    return inputs
+
+
+def _coerce_task_spec(raw_task: dict[str, Any], *, index: int) -> TaskSpec | None:
+    task_id = str(raw_task.get("task_id") or f"task_{index + 1}").strip()
+    description = str(raw_task.get("description") or "").strip()
+    task_type = _normalize_task_type(raw_task.get("task_type"))
+    if task_type is None:
+        logger.debug("task planner encountered unsupported task_type: %s", raw_task.get("task_type"))
+        return None
+    if not description:
+        description = task_type.replace("_", " ")
+    try:
+        return TaskSpec.model_validate(
+            {
+                "task_id": task_id,
+                "task_type": task_type,
+                "description": description,
+                "inputs": _normalize_task_inputs(raw_task.get("inputs")),
+                "depends_on": _normalize_string_list(raw_task.get("depends_on")),
+                "required_outputs": _normalize_string_list(raw_task.get("required_outputs")),
+                "can_retry": bool(raw_task.get("can_retry", True)),
+            }
+        )
+    except ValidationError as exc:
+        logger.debug("task planner task validation failed: %s", exc)
+        return None
+
+
+def _coerce_task_plan(payload: dict[str, Any] | None) -> TaskPlan | None:
+    if not isinstance(payload, dict):
+        return None
+
+    raw_tasks = payload.get("tasks")
+    tasks: list[TaskSpec] = []
+    if isinstance(raw_tasks, list):
+        for index, raw_task in enumerate(raw_tasks):
+            if not isinstance(raw_task, dict):
+                continue
+            task = _coerce_task_spec(raw_task, index=index)
+            if task is not None:
+                tasks.append(task)
+
+    goal = str(payload.get("goal") or "").strip()
+    if not goal:
+        return None
+
+    try:
+        planning_confidence = float(payload.get("planning_confidence", 0.6))
+    except (TypeError, ValueError):
+        planning_confidence = 0.6
+
+    try:
+        return TaskPlan.model_validate(
+            {
+                "goal": goal,
+                "planning_confidence": max(0.0, min(1.0, planning_confidence)),
+                "assumptions": _normalize_string_list(payload.get("assumptions")),
+                "ambiguity_flags": _normalize_string_list(payload.get("ambiguity_flags")),
+                "tasks": tasks,
+                "final_response_style": str(payload.get("final_response_style")).strip()
+                if isinstance(payload.get("final_response_style"), str) and str(payload.get("final_response_style")).strip()
+                else None,
+            }
+        )
+    except ValidationError as exc:
+        logger.debug("task planner payload validation failed: %s", exc)
+        return None
+
+
+DATASET_DEPENDENT_TASK_TYPES: set[str] = {
+    "dataset_summary",
+    "group_aggregate",
+    "artifact_lookup",
+    "python_analysis",
+    "model_train",
+}
+NON_TOOL_TASK_TYPES: set[str] = {
+    "direct_answer",
+    "clarification",
+}
+
+
+def validate_task_plan_against_routing(
+    *,
+    routing_decision: RoutingDecision,
+    task_plan: TaskPlan | None,
+) -> TaskPlan | None:
+    if task_plan is None:
+        return None
+    if routing_decision.route_source != "llm_primary":
+        return None
+
+    task_types = {task.task_type for task in task_plan.tasks}
+    if not task_types:
+        return None
+
+    if not routing_decision.needs_tool_execution and not task_types.issubset(NON_TOOL_TASK_TYPES):
+        return None
+    if not routing_decision.needs_dataset and task_types.intersection(DATASET_DEPENDENT_TASK_TYPES):
+        return None
+    if routing_decision.primary_mode == "clarification" and task_types != {"clarification"}:
+        return None
+    if (
+        routing_decision.primary_mode == "direct_answer"
+        and not routing_decision.needs_tool_execution
+        and not task_types.issubset(NON_TOOL_TASK_TYPES)
+    ):
+        return None
+    return task_plan
 
 
 def _confidence_band_from_score(score: float) -> ConfidenceBand:
@@ -390,17 +586,8 @@ def _coerce_payload(payload: dict[str, Any]) -> IntentInterpretationPayload | No
                 "fallback_reasons": _normalize_string_list(payload.get("fallback_reasons")),
                 "reasoning_summary": str(payload.get("reasoning_summary", "")).strip(),
                 "execution_plan": execution_plan,
-                "intent_type": payload.get("intent_type") or compatibility["intent_type"],
-                "is_dataset_overview": bool(payload.get("is_dataset_overview")) or compatibility["is_dataset_overview"],
-                "is_follow_up": bool(payload.get("is_follow_up")) or compatibility["is_follow_up"],
-                "requires_ml": bool(payload.get("requires_ml")) or compatibility["requires_ml"],
-                "requires_chart": bool(payload.get("requires_chart")) or compatibility["requires_chart"],
-                "requires_python_analysis": bool(payload.get("requires_python_analysis")) or compatibility["requires_python_analysis"],
                 "deliverables": list(dict.fromkeys(deliverables or compatibility["deliverables"])),
-                "confidence": confidence_band,
-                "conflict_flags": ambiguity_flags,
                 "route_source": payload.get("route_source", "llm_primary"),
-                "suggested_plan": execution_plan,
             }
         )
     except ValidationError as exc:
@@ -487,3 +674,49 @@ def plan_intent_with_llm(
     routing_raw.setdefault("route_source", "llm_primary")
     routing_raw.setdefault("ambiguity_flags", routing_raw.get("conflict_flags", []))
     return _coerce_payload(routing_raw)
+
+
+def plan_request_with_llm(
+    message: str,
+    *,
+    dataset_columns: list[str] | None = None,
+    prior_analysis_active: bool = False,
+    dataset_summary: dict[str, Any] | None = None,
+    schema_profile: dict[str, Any] | None = None,
+    latest_artifact: dict[str, Any] | None = None,
+    available_artifact_types: list[str] | None = None,
+    recommended_prompts: list[str] | None = None,
+) -> UnifiedPlanningResult | None:
+    model = get_intent_planner_model()
+    if model is None:
+        return None
+
+    payload = _invoke_model_json(
+        model,
+        message=message,
+        dataset_columns=dataset_columns or [],
+        prior_analysis_active=prior_analysis_active,
+        system_prompt=UNIFIED_PLANNER_SYSTEM_PROMPT,
+        extra_payload={
+            "dataset_summary": dataset_summary or {},
+            "schema_profile": schema_profile or {},
+            "latest_artifact": latest_artifact or {},
+            "available_artifact_types": available_artifact_types or [],
+            "recommended_prompts": recommended_prompts or [],
+        },
+    )
+    if payload is None:
+        return None
+
+    routing_payload = payload.get("routing_decision")
+    if not isinstance(routing_payload, dict):
+        routing_payload = payload
+    if isinstance(routing_payload, dict):
+        routing_payload = dict(routing_payload)
+        routing_payload.setdefault("route_source", "llm_primary")
+        routing_payload.setdefault("ambiguity_flags", routing_payload.get("conflict_flags", []))
+
+    return UnifiedPlanningResult(
+        routing_decision=_coerce_payload(routing_payload) if isinstance(routing_payload, dict) else None,
+        task_plan=_coerce_task_plan(payload.get("task_plan")),
+    )
