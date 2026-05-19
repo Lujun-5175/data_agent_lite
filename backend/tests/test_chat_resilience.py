@@ -591,6 +591,84 @@ def test_unsupported_task_plan_falls_back_to_graph(monkeypatch: pytest.MonkeyPat
     assert capture_graph.calls == 1
 
 
+def test_mixed_task_plan_executes_supported_subset_before_graph(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    capture_graph = _CaptureGraph()
+    monkeypatch.setattr(server, "graph", capture_graph)
+    dataset_id = _upload_plan_execution_dataset(client)
+    monkeypatch.setattr(
+        chat_service,
+        "plan_request_with_llm",
+        lambda *args, **kwargs: intent_planner.UnifiedPlanningResult(
+            routing_decision=RoutingDecision(
+                primary_mode="analysis",
+                confidence_score=0.72,
+                confidence_band="medium",
+                needs_dataset=True,
+                needs_tool_execution=True,
+                needs_artifact_context=False,
+                requested_capabilities=["group_analysis", "python_analysis"],
+                ambiguity_flags=["clarification_requested"],
+                guardrail_actions=["fallback_to_heuristic_due_to_low_confidence"],
+                fallback_reasons=["low_confidence_with_ambiguity"],
+                reasoning_summary="先做分组统计，再考虑补充检验。",
+                execution_plan=["group rows", "run significance test"],
+                deliverables=["summary"],
+                route_source="llm_with_guardrail",
+            ),
+            task_plan=TaskPlan(
+                goal="按渠道分组统计并补充显著性检验",
+                planning_confidence=0.71,
+                assumptions=["conversion_flag 为 0/1 二元列"],
+                ambiguity_flags=[],
+                tasks=[
+                    TaskSpec(
+                        task_id="task_1",
+                        task_type="group_aggregate",
+                        description="按渠道统计 session_count/page_views 均值和 conversion_flag 转化率",
+                        inputs={
+                            "group_by": ["channel_source"],
+                            "metrics": [
+                                {"column": "session_count", "agg": "mean"},
+                                {"column": "page_views", "agg": "mean"},
+                                {"column": "conversion_flag", "agg": "mean", "semantic": "rate"},
+                            ],
+                        },
+                        required_outputs=["group_summary_table"],
+                    ),
+                    TaskSpec(
+                        task_id="task_2",
+                        task_type="python_analysis",
+                        description="对转化差异做进一步显著性检验",
+                        inputs={"test": "chi_square"},
+                        depends_on=["task_1"],
+                        required_outputs=["chi_square_result"],
+                    ),
+                ],
+                final_response_style="concise_analysis",
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat/stream",
+        json={
+            "dataset_id": dataset_id,
+            "config": {"configurable": {"dataset_id": dataset_id}},
+            "input": {"messages": [{"type": "human", "content": "按 channel_source 分组分析 session_count 和转化率，并判断是否显著"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    route_info = next(payload for event_type, payload in events if event_type == "route_info")
+    assert route_info["final_branch"] == "plan_execution"
+    text = "".join(str(payload.get("content", "")) for event_type, payload in events if event_type == "message_chunk")
+    assert "已按统一计划执行" in text
+    assert "当前先执行了 1 个可直接落地的计划任务" in text
+    assert "conversion_flag_rate" in text
+    assert capture_graph.calls == 0
+
+
 def test_plan_verifier_reports_incomplete_required_outputs(monkeypatch: pytest.MonkeyPatch, client: TestClient):
     capture_graph = _CaptureGraph()
     monkeypatch.setattr(server, "graph", capture_graph)

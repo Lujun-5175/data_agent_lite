@@ -21,14 +21,42 @@ class PlanExecutionResult:
     produced_outputs: list[str]
 
 
-def supports_task_plan(task_plan: TaskPlan | None) -> bool:
+def build_executable_task_plan(task_plan: TaskPlan | None) -> TaskPlan | None:
     if task_plan is None or not task_plan.tasks:
-        return False
-    return all(_supports_task(task) for task in task_plan.tasks)
+        return None
+
+    executable_tasks: list[TaskSpec] = []
+    executable_task_ids: set[str] = set()
+    for task in task_plan.tasks:
+        if not _supports_task(task):
+            continue
+        if any(depends_on not in executable_task_ids for depends_on in task.depends_on):
+            continue
+        executable_tasks.append(task)
+        executable_task_ids.add(task.task_id)
+
+    if not executable_tasks:
+        return None
+
+    return TaskPlan.model_validate(
+        {
+            "goal": task_plan.goal,
+            "planning_confidence": task_plan.planning_confidence,
+            "assumptions": list(task_plan.assumptions),
+            "ambiguity_flags": list(task_plan.ambiguity_flags),
+            "tasks": executable_tasks,
+            "final_response_style": task_plan.final_response_style,
+        }
+    )
+
+
+def supports_task_plan(task_plan: TaskPlan | None) -> bool:
+    return build_executable_task_plan(task_plan) is not None
 
 
 def execute_task_plan(*, dataset_id: str, task_plan: TaskPlan) -> PlanExecutionResult:
-    if not supports_task_plan(task_plan):
+    executable_task_plan = build_executable_task_plan(task_plan)
+    if executable_task_plan is None:
         raise AppError(
             "unsupported_task_plan",
             "当前结构化计划包含暂不支持的任务类型，已回退到通用分析执行。",
@@ -39,7 +67,7 @@ def execute_task_plan(*, dataset_id: str, task_plan: TaskPlan) -> PlanExecutionR
     sections: list[str] = []
     executed_task_ids: list[str] = []
     produced_outputs: list[str] = []
-    for task in task_plan.tasks:
+    for task in executable_task_plan.tasks:
         if task.task_type == "dataset_summary":
             sections.append(_execute_dataset_summary(dataset_id))
         elif task.task_type == "group_aggregate":
@@ -55,11 +83,20 @@ def execute_task_plan(*, dataset_id: str, task_plan: TaskPlan) -> PlanExecutionR
             )
         executed_task_ids.append(task.task_id)
 
-    header = [f"已按统一计划执行：{task_plan.goal}"]
-    if task_plan.assumptions:
+    skipped_task_count = max(0, len(task_plan.tasks) - len(executable_task_plan.tasks))
+    header = [f"已按统一计划执行：{executable_task_plan.goal}"]
+    if skipped_task_count:
+        header.extend(
+            [
+                "",
+                f"说明：当前先执行了 {len(executable_task_plan.tasks)} 个可直接落地的计划任务，"
+                f"另有 {skipped_task_count} 个更复杂任务暂未走结构化计划分支。",
+            ]
+        )
+    if executable_task_plan.assumptions:
         header.append("")
         header.append("执行假设：")
-        header.extend(f"- {item}" for item in task_plan.assumptions)
+        header.extend(f"- {item}" for item in executable_task_plan.assumptions)
     return PlanExecutionResult(
         content="\n".join([*header, "", *sections]).strip(),
         executed_task_ids=executed_task_ids,

@@ -364,8 +364,6 @@ def validate_task_plan_against_routing(
 ) -> TaskPlan | None:
     if task_plan is None:
         return None
-    if routing_decision.route_source != "llm_primary":
-        return None
 
     task_types = {task.task_type for task in task_plan.tasks}
     if not task_types:

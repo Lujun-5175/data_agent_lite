@@ -314,7 +314,7 @@ def test_validate_task_plan_against_routing_invalidates_non_tool_plan_mismatch()
     )
 
 
-def test_validate_task_plan_against_routing_invalidates_non_primary_route_source():
+def test_validate_task_plan_against_routing_keeps_supported_plan_under_guardrail_route():
     routing_decision = intent_planner.IntentInterpretationPayload(
         primary_mode="analysis",
         confidence_score=0.62,
@@ -348,10 +348,10 @@ def test_validate_task_plan_against_routing_invalidates_non_primary_route_source
         final_response_style="concise_analysis",
     )
 
-    assert (
-        intent_planner.validate_task_plan_against_routing(
-            routing_decision=routing_decision,
-            task_plan=task_plan,
-        )
-        is None
+    validated = intent_planner.validate_task_plan_against_routing(
+        routing_decision=routing_decision,
+        task_plan=task_plan,
     )
+
+    assert validated is not None
+    assert validated.tasks[0].task_type == "group_aggregate"

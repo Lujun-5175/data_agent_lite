@@ -31,6 +31,7 @@ from src.request_parsing import (
     has_prior_analysis_context,
 )
 from src.result_types import get_artifact_repository
+from src.plan_executor import build_executable_task_plan
 from src.routing_executor import ExecutorDependencies, execute_chat_stream_response, resolve_final_branch
 from src.routing_models import RoutingDecision
 from src.routing_projection import (
@@ -424,6 +425,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         routing_decision=routing_decision,
         task_plan=planning_result.task_plan if planning_result is not None else None,
     )
+    task_plan = build_executable_task_plan(task_plan)
     final_branch = resolve_final_branch(
         dataset_id=dataset_id,
         routing_decision=routing_decision,
