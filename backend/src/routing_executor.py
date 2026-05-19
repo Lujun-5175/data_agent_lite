@@ -688,9 +688,10 @@ def execute_chat_stream_response(
                     dependencies.build_event_payload(route_info_payload, dataset_id=dataset_id),
                 )
                 try:
-                    result = execute_task_plan(dataset_id=dataset_id, task_plan=requirements.task_plan)
+                    active_task_plan = requirements.executable_task_plan or requirements.task_plan
+                    result = execute_task_plan(dataset_id=dataset_id, task_plan=active_task_plan)
                     verification = verify_task_plan(
-                        task_plan=requirements.task_plan,
+                        task_plan=active_task_plan,
                         executed_task_ids=result.executed_task_ids,
                         produced_outputs=result.produced_outputs,
                     )

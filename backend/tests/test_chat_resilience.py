@@ -588,6 +588,9 @@ def test_unsupported_task_plan_falls_back_to_graph(monkeypatch: pytest.MonkeyPat
     events = _parse_sse(response.text)
     route_info = next(payload for event_type, payload in events if event_type == "route_info")
     assert route_info["final_branch"] == "agent_graph"
+    assert route_info["task_plan_available"] is True
+    assert route_info["task_plan_generation_failed"] is False
+    assert route_info["task_plan_tasks"][0]["task_type"] == "python_analysis"
     assert capture_graph.calls == 1
 
 

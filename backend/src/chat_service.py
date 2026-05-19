@@ -64,6 +64,7 @@ class ChatRequestRequirements:
     prior_analysis_active: bool
     routing_decision: RoutingDecision
     task_plan: TaskPlan | None
+    executable_task_plan: TaskPlan | None
     task_plan_attempted: bool
     task_plan_generation_failed: bool
     chart_requested: bool
@@ -425,11 +426,11 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         routing_decision=routing_decision,
         task_plan=planning_result.task_plan if planning_result is not None else None,
     )
-    task_plan = build_executable_task_plan(task_plan)
+    executable_task_plan = build_executable_task_plan(task_plan)
     final_branch = resolve_final_branch(
         dataset_id=dataset_id,
         routing_decision=routing_decision,
-        task_plan=task_plan,
+        task_plan=executable_task_plan,
     )
     set_route_diagnostics(
         build_route_diagnostics(
@@ -477,6 +478,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         prior_analysis_active=prior_analysis_active,
         routing_decision=routing_decision,
         task_plan=task_plan,
+        executable_task_plan=executable_task_plan,
         task_plan_attempted=task_plan_attempted,
         task_plan_generation_failed=task_plan_attempted and task_plan is None,
         chart_requested=legacy_route.requires_chart or _looks_like_chart_request(latest_user_message),
