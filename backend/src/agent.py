@@ -36,10 +36,10 @@ DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 
 class AgentContext(BaseModel):
-    dataset_id: str | None = Field(default=None, description="当前分析的数据集 ID")
+    dataset_id: str | None = Field(default=None, description="The current dataset ID being analyzed")
     routing_decision: dict[str, Any] | None = Field(
         default=None,
-        description="由 chat_service 预先生成的路由决策",
+        description="Pre-generated routing decision from chat_service",
     )
 
 
@@ -417,7 +417,7 @@ def dataset_context_middleware(request) -> str:
 6. If the request involves non-existent columns, invalid filters, or unsupported operations, explain why and offer alternatives.
 7. If the user asks about field semantics, modelable columns, or preprocessing steps, prioritize returning structured artifact results (e.g., schema_profile / preprocess_result / model_prep_plan) followed by a brief summary.
 8. Baseline ML only supports logistic regression / linear regression. AutoML, Random Forest, XGBoost, SHAP are not supported. For out-of-scope requests, clearly refuse and suggest alternatives.
-9. 若用户显式要求模型指标或特征重要性，应按需继续调用 `ml_execute`，并分别使用 `action="metrics"` / `action="feature_importance"`, reusing the latest model artifact.
+9. If the user explicitly requests model metrics or feature importance, continue calling `ml_execute` with `action="metrics"` / `action="feature_importance"`, reusing the latest model artifact.odel artifact.
 
 [Output Style]
 - Default to English. Lead with the conclusion, then provide key evidence (key numbers, group results, trends).

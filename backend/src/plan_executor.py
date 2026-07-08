@@ -59,7 +59,7 @@ def execute_task_plan(*, dataset_id: str, task_plan: TaskPlan) -> PlanExecutionR
     if executable_task_plan is None:
         raise AppError(
             "unsupported_task_plan",
-            "当前结构化计划包含暂不支持的任务类型，已回退到通用分析执行。",
+            "Current structured plan containsUnsupported task type(s)，Fell back to general analysis execution。",
             200,
             stage="plan_execution",
         )
@@ -77,25 +77,25 @@ def execute_task_plan(*, dataset_id: str, task_plan: TaskPlan) -> PlanExecutionR
         else:  # pragma: no cover - guarded by supports_task_plan
             raise AppError(
                 "unsupported_task_plan",
-                f"暂不支持的任务类型：{task.task_type}",
+                f"Unsupported task type(s)：{task.task_type}",
                 200,
                 stage="plan_execution",
             )
         executed_task_ids.append(task.task_id)
 
     skipped_task_count = max(0, len(task_plan.tasks) - len(executable_task_plan.tasks))
-    header = [f"已按统一计划执行：{executable_task_plan.goal}"]
+    header = [f"Executed via unified plan：{executable_task_plan.goal}"]
     if skipped_task_count:
         header.extend(
             [
                 "",
-                f"说明：当前先执行了 {len(executable_task_plan.tasks)} 个可直接落地的计划任务，"
-                f"另有 {skipped_task_count} 个更复杂任务暂未走结构化计划分支。",
+                f"说明：Currently executed  {len(executable_task_plan.tasks)}  directly executable plan tasks，"
+                f"另有 {skipped_task_count}  more complex tasks not yet on structured plan path。",
             ]
         )
     if executable_task_plan.assumptions:
         header.append("")
-        header.append("执行假设：")
+        header.append("Execution assumptions：")
         header.extend(f"- {item}" for item in executable_task_plan.assumptions)
     return PlanExecutionResult(
         content="\n".join([*header, "", *sections]).strip(),
@@ -117,14 +117,14 @@ def _supports_task(task: TaskSpec) -> bool:
 def _execute_dataset_summary(dataset_id: str) -> str:
     summary = get_data_context_summary(dataset_id)
     lines = [
-        "数据集概况：",
-        f"- 数据规模：{summary['row_count']:,} 行 × {summary['column_count']:,} 列",
-        f"- 数值字段数：{summary['numeric_column_count']}",
-        f"- 分类字段数：{summary['categorical_column_count']}",
+        "Dataset overview：",
+        f"- Data size：{summary['row_count']:,} 行 × {summary['column_count']:,} 列",
+        f"- Numeric field count：{summary['numeric_column_count']}",
+        f"- Categorical field count：{summary['categorical_column_count']}",
     ]
     warnings = summary.get("warnings") or []
     if warnings:
-        lines.append("- 需要注意：")
+        lines.append("- Note：")
         lines.extend(f"  - {warning}" for warning in warnings[:3])
     return "\n".join(lines)
 
@@ -164,13 +164,13 @@ def _execute_group_aggregate(dataset_id: str, task: TaskSpec) -> tuple[str, list
     ]
     if rate_metadata:
         lines.append("")
-        lines.append("转化率说明：")
+        lines.append("Conversion rate note：")
         for item in rate_metadata:
             metric_name = item.get("metric")
             source_column = item.get("source_column")
             positive_label = item.get("positive_label")
             lines.append(
-                f"- `{metric_name}` 基于列 `{source_column}` 计算，正类取值为 `{positive_label}`。"
+                f"- `{metric_name}` Based on column `{source_column}` computed, positive class = `{positive_label}`。"
             )
     if warnings:
         lines.append("")
@@ -211,7 +211,7 @@ def _build_group_metrics(raw_metrics: Any) -> list[dict[str, Any]]:
 
 def _render_markdown_table(rows: list[dict[str, Any]]) -> str:
     if not rows:
-        return "未生成可展示的分组统计结果。"
+        return "No displayable group statistics result was generated。"
 
     columns = list(rows[0].keys())
     header = "| " + " | ".join(columns) + " |"

@@ -396,7 +396,7 @@ class PlotHelperAPI:
             counts.columns = [x, "count"]
             sns.barplot(data=counts, x=x, y="count", ax=ax, color="#4F86C6")
             ax.set_ylabel("count")
-        ax.set_title(title or f"{x} 条形图")
+        ax.set_title(title or f"{x} bar chart")
         ax.set_xlabel(x)
         fig.tight_layout()
         return fig
@@ -424,7 +424,7 @@ class PlotHelperAPI:
             raise SafeExecutionError(f"Column does not exist: {y}")
         fig, ax = plt.subplots(figsize=(8, 4.5))
         sns.boxplot(data=self._df, x=x if x in self._df.columns else None, y=y, ax=ax)
-        ax.set_title(title or f"{y} 箱线图")
+        ax.set_title(title or f"{y} box plot")
         fig.tight_layout()
         return fig
 
@@ -434,11 +434,11 @@ class PlotHelperAPI:
         else:
             target_df = self._df.select_dtypes(include=[np.number])
         if target_df.empty:
-            raise SafeExecutionError("没有可用于相关性热力图的数值列。")
+            raise SafeExecutionError("No numeric columns available for correlation heatmap。")
         corr_df = target_df.corr(numeric_only=True)
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.heatmap(corr_df, cmap="Blues", annot=True, fmt=".2f", ax=ax)
-        ax.set_title(title or "相关性热力图")
+        ax.set_title(title or "Correlation heatmap")
         fig.tight_layout()
         return fig
 
@@ -466,12 +466,12 @@ class ProfileHelperAPI:
         dataset_id = self._require_dataset_id()
         artifact = get_artifact_repository().get_latest(dataset_id, artifact_type=artifact_type)
         if artifact is None:
-            raise SafeExecutionError("当前还没有可复用的数据理解结果。")
+            raise SafeExecutionError("No reusable data understanding results yet。")
         return artifact
 
     def _require_dataset_id(self) -> str:
         if not self._dataset_id:
-            raise SafeExecutionError("当前没有可用数据集。请先上传数据。")
+            raise SafeExecutionError("No active dataset. Please upload data first.")
         return self._dataset_id
 
 
@@ -542,7 +542,7 @@ class MLHelperAPI:
     def _service(self) -> BaselineMLService:
         dataset_id = self._dataset_id
         if not dataset_id:
-            raise SafeExecutionError("当前没有可用数据集。请先上传 CSV 后再训练模型。")
+            raise SafeExecutionError("No active dataset. Please upload CSV before retraining the model.")
         return BaselineMLService(dataset_id=dataset_id)
 
 
@@ -560,13 +560,13 @@ class StatsHelperAPI:
     def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
         artifact = get_artifact_repository().get_latest(self._dataset_id, artifact_type=artifact_type)
         if artifact is None:
-            raise SafeExecutionError("当前还没有可复用的统计结果。请先执行一次统计分析。")
+            raise SafeExecutionError("No reusable statistical results yet. Please run a statistical analysis first.")
         return artifact
 
     def describe_numeric(self, columns: list[str] | None = None) -> dict[str, Any]:
         selected_columns, warnings = self._resolve_numeric_columns(columns)
         if not selected_columns:
-            raise SafeExecutionError("没有可用于数值描述统计的列。")
+            raise SafeExecutionError("No columns available for numeric descriptive statistics。")
 
         rows: list[dict[str, Any]] = []
         for column in selected_columns:
@@ -597,7 +597,7 @@ class StatsHelperAPI:
     def describe_categorical(self, columns: list[str] | None = None) -> dict[str, Any]:
         selected_columns, warnings = self._resolve_categorical_columns(columns)
         if not selected_columns:
-            raise SafeExecutionError("没有可用于分类描述统计的列。")
+            raise SafeExecutionError("No columns available for categorical descriptive statistics。")
 
         rows: list[dict[str, Any]] = []
         for column in selected_columns:
@@ -639,7 +639,7 @@ class StatsHelperAPI:
         if group_by not in self._df.columns:
             raise SafeExecutionError(f"Column does not exist: {group_by}")
         if top_n is not None and top_n <= 0:
-            raise SafeExecutionError("top_n 必须为正整数。")
+            raise SafeExecutionError("top_n  must be 正整数。")
 
         metrics = metrics or [{"op": "count", "as": "row_count"}]
         agg_map: dict[str, tuple[str | None, str, Any]] = {}
@@ -648,14 +648,14 @@ class StatsHelperAPI:
             alias = str(metric.get("as") or f"metric_{idx}")
             column = metric.get("column")
             if op not in {"count", "mean", "median", "sum", "min", "max", "nunique", "rate"}:
-                raise SafeExecutionError(f"不支持的聚合操作: {op}")
+                raise SafeExecutionError(f"Unsupported aggregation operation: {op}")
             if op == "count":
                 agg_map[alias] = (None, "count", None)
                 continue
             if not isinstance(column, str) or column not in self._df.columns:
                 raise SafeExecutionError(f"Column does not exist: {column}")
             if op in {"mean", "median", "sum", "min", "max"} and not pd.api.types.is_numeric_dtype(self._df[column]):
-                raise SafeExecutionError(f"{op} 仅支持数值列: {column}")
+                raise SafeExecutionError(f"{op} Only supports numeric columns: {column}")
             positive_label = metric.get("positive_label") if op == "rate" else None
             agg_map[alias] = (column, op, positive_label)
 
@@ -712,7 +712,7 @@ class StatsHelperAPI:
             output = output.sort_values("group", ascending=True, kind="stable")
 
         if len(output.index) > self.MAX_GROUP_ROWS:
-            warnings.append(f"分组结果超过 {self.MAX_GROUP_ROWS} 行，已截断。")
+            warnings.append(f"Group result exceeds {self.MAX_GROUP_ROWS} 行，已截断。")
             output = output.head(self.MAX_GROUP_ROWS)
 
         if top_n is not None:
@@ -735,23 +735,23 @@ class StatsHelperAPI:
 
     def correlation(self, columns: list[str] | None = None, top_k: int = 10) -> dict[str, Any]:
         if top_k <= 0:
-            raise SafeExecutionError("top_k 必须为正整数。")
+            raise SafeExecutionError("top_k  must be 正整数。")
         if columns:
             self._validate_columns(columns)
             selected = [col for col in columns if pd.api.types.is_numeric_dtype(self._df[col])]
             warnings = []
             dropped = [col for col in columns if col not in selected]
             if dropped:
-                warnings.append(f"以下列非数值类型，已忽略：{', '.join(dropped)}")
+                warnings.append(f"The following columns are non-numeric，已忽略：{', '.join(dropped)}")
         else:
             selected = [str(col) for col in self._df.select_dtypes(include=[np.number]).columns]
             warnings = []
             if len(selected) > self.MAX_CORR_COLUMNS:
-                warnings.append(f"自动选择数值列超过 {self.MAX_CORR_COLUMNS}，仅保留前 {self.MAX_CORR_COLUMNS} 列。")
+                warnings.append(f"Auto-selected numeric columns exceed {self.MAX_CORR_COLUMNS}, keeping only top {self.MAX_CORR_COLUMNS}.")
                 selected = selected[: self.MAX_CORR_COLUMNS]
 
         if len(selected) < 2:
-            raise SafeExecutionError("相关性分析至少需要两列数值列。")
+            raise SafeExecutionError("Correlation analysis requires at least two numeric columns。")
 
         corr_df = self._df[selected].corr(method="pearson", numeric_only=True).fillna(0.0)
         top_pairs: list[dict[str, Any]] = []
@@ -784,14 +784,14 @@ class StatsHelperAPI:
     def t_test(self, value_col: str, group_col: str, group_a: Any, group_b: Any) -> dict[str, Any]:
         self._validate_columns([value_col, group_col])
         if not pd.api.types.is_numeric_dtype(self._df[value_col]):
-            raise SafeExecutionError(f"t 检验仅支持数值列: {value_col}")
+            raise SafeExecutionError(f"t 检验Only supports numeric columns: {value_col}")
 
         subset = self._df[[value_col, group_col]].dropna()
         a_values = pd.to_numeric(subset[subset[group_col] == group_a][value_col], errors="coerce").dropna()
         b_values = pd.to_numeric(subset[subset[group_col] == group_b][value_col], errors="coerce").dropna()
         warnings: list[str] = []
         if len(a_values.index) < 2 or len(b_values.index) < 2:
-            warnings.append("样本量过小，t 检验结果可能不稳定（每组至少建议 2 条）。")
+            warnings.append("Sample size too small, t test results may be unstable (recommended at least 2 per group).")
 
         if a_values.empty or b_values.empty:
             statistic = None
@@ -824,11 +824,11 @@ class StatsHelperAPI:
         self._validate_columns([col_a, col_b])
         contingency = pd.crosstab(self._df[col_a], self._df[col_b], dropna=False)
         if contingency.empty:
-            raise SafeExecutionError("卡方检验失败：分组后没有可用数据。")
+            raise SafeExecutionError("Chi-square test failed：No usable data after grouping。")
         chi2, p_value, dof, expected = scipy_stats.chi2_contingency(contingency)
         warnings: list[str] = []
         if (expected < 5).any():
-            warnings.append("部分期望频数小于 5，卡方检验前提较弱，请谨慎解释。")
+            warnings.append("Some expected frequencies are less than 5. Chi-square test assumptions are weak. Interpret with caution.")
 
         artifact = build_artifact(
             artifact_type="test_result",
@@ -850,7 +850,7 @@ class StatsHelperAPI:
     def anova(self, value_col: str, group_col: str) -> dict[str, Any]:
         self._validate_columns([value_col, group_col])
         if not pd.api.types.is_numeric_dtype(self._df[value_col]):
-            raise SafeExecutionError(f"ANOVA 仅支持数值列: {value_col}")
+            raise SafeExecutionError(f"ANOVA Only supports numeric columns: {value_col}")
         subset = self._df[[value_col, group_col]].dropna()
         grouped = []
         means: list[dict[str, Any]] = []
@@ -869,10 +869,10 @@ class StatsHelperAPI:
                 }
             )
             if len(values.index) < 2:
-                warnings.append(f"分组 {group_name} 样本量小于 2，结果可能不稳定。")
+                warnings.append(f"分组 {group_name} sample size < 2, results may be unstable.")
 
         if len(grouped) < 3:
-            raise SafeExecutionError("ANOVA 至少需要 3 个有效分组。")
+            raise SafeExecutionError("ANOVA requires at least 3 valid groups.")
 
         statistic, p_value = scipy_stats.f_oneway(*grouped)
         artifact = build_artifact(
@@ -898,13 +898,13 @@ class StatsHelperAPI:
             selected = [col for col in columns if pd.api.types.is_numeric_dtype(self._df[col])]
             dropped = [col for col in columns if col not in selected]
             if dropped:
-                warnings.append(f"以下列非数值类型，已忽略：{', '.join(dropped)}")
+                warnings.append(f"The following columns are non-numeric，已忽略：{', '.join(dropped)}")
             return selected, warnings
 
         selected = [str(col) for col in self._df.select_dtypes(include=[np.number]).columns]
         if len(selected) > self.MAX_AUTO_NUMERIC_COLUMNS:
             warnings.append(
-                f"自动选择数值列超过 {self.MAX_AUTO_NUMERIC_COLUMNS}，仅保留前 {self.MAX_AUTO_NUMERIC_COLUMNS} 列。"
+                f"Auto-selected numeric columns exceed {self.MAX_AUTO_NUMERIC_COLUMNS}, keeping only top {self.MAX_AUTO_NUMERIC_COLUMNS}."
             )
             selected = selected[: self.MAX_AUTO_NUMERIC_COLUMNS]
         return selected, warnings
@@ -916,13 +916,13 @@ class StatsHelperAPI:
             selected = [col for col in columns if not pd.api.types.is_numeric_dtype(self._df[col])]
             dropped = [col for col in columns if col not in selected]
             if dropped:
-                warnings.append(f"以下列为数值列，已忽略：{', '.join(dropped)}")
+                warnings.append(f"The following columns are numeric and were ignored: {', '.join(dropped)}")
             return selected, warnings
 
         selected = [str(col) for col in self._df.columns if not pd.api.types.is_numeric_dtype(self._df[col])]
         if len(selected) > self.MAX_AUTO_CATEGORICAL_COLUMNS:
             warnings.append(
-                f"自动选择分类列超过 {self.MAX_AUTO_CATEGORICAL_COLUMNS}，仅保留前 {self.MAX_AUTO_CATEGORICAL_COLUMNS} 列。"
+                f"Auto-selected categorical columns exceeded {self.MAX_AUTO_CATEGORICAL_COLUMNS}, keeping only top {self.MAX_AUTO_CATEGORICAL_COLUMNS}."
             )
             selected = selected[: self.MAX_AUTO_CATEGORICAL_COLUMNS]
         return selected, warnings
@@ -945,7 +945,7 @@ class StatsHelperAPI:
             return {
                 "positive_label": None,
                 "source": "ambiguous",
-                "warning": "列为空，无法推断正类标签；rate 结果将为空。",
+                "warning": "Column is empty. Cannot infer positive class label; rate result will be empty.",
             }
 
         if pd.api.types.is_bool_dtype(non_null):
@@ -959,12 +959,12 @@ class StatsHelperAPI:
                 return {
                     "positive_label": max(unique_numeric),
                     "source": "binary_numeric_default",
-                    "warning": f"列包含二值数值 {unique_numeric}，按较大值作为正类。",
+                    "warning": f"Column has binary numeric values {unique_numeric}, using larger value as positive class.",
                 }
             return {
                 "positive_label": None,
                 "source": "ambiguous",
-                "warning": "rate 仅建议用于二值标签列，当前列无法可靠推断正类。",
+                "warning": "Rate is only recommended for binary label columns. Current column cannot reliably infer positive class.",
             }
 
         normalized = non_null.astype(str).str.strip()
@@ -973,7 +973,7 @@ class StatsHelperAPI:
             return {
                 "positive_label": None,
                 "source": "ambiguous",
-                "warning": f"字符串标签为 {len(unique_text)} 类，无法可靠推断正类；rate 结果将为空。",
+                "warning": f"String labels: {len(unique_text)} classes. Cannot reliably infer positive class; rate result will be empty.",
             }
 
         normalized_map = {item.lower(): item for item in unique_text}
@@ -989,13 +989,13 @@ class StatsHelperAPI:
                     return {
                         "positive_label": item,
                         "source": "hint_match",
-                        "warning": f"按负类标签 {negative_hits[0]} 反推正类 {item}。",
+                        "warning": f"Inferred from negative label {negative_hits[0]}, positive class = {item}。",
                     }
 
         return {
             "positive_label": None,
             "source": "ambiguous",
-            "warning": f"未能在标签 {unique_text} 中识别稳定正类，请显式提供 positive_label。",
+            "warning": f"Could not identify a stable positive class among labels {unique_text}. Please provide positive_label explicitly.",
         }
 
     def _map_positive_rate(self, series: pd.Series, positive_label: Any) -> pd.Series:
@@ -1031,12 +1031,12 @@ class StatsHelperAPI:
     def _interpret_p_value(self, p_value: Any) -> str:
         p = self._safe_float(p_value)
         if p is None:
-            return "样本不足，无法稳定判断统计显著性。"
+            return "Insufficient samples to stably determine statistical significance."
         if p < 0.01:
             return "差异/关联显著（p < 0.01）。"
         if p < 0.05:
-            return "差异/关联较显著（p < 0.05）。"
-        return "未观察到显著差异/关联（p >= 0.05）。"
+            return "Difference/association is statistically significant (p < 0.05)."
+        return "No significant difference/association observed (p >= 0.05)."
 
 
 class SafePythonExecutor:
@@ -1059,12 +1059,12 @@ class SafePythonExecutor:
             raise
         except Exception as exc:
             logger.warning("Safe Python execution failed: %s", exc)
-            return f"代码执行失败: {exc}"
+            return f"Code execution failed: {exc}"
 
         printed = "".join(output).strip()
         if printed:
             return printed
-        return "代码执行成功，但没有输出。请使用 print() 展示结果。"
+        return "Code executed successfully, but no output. Use print() to display results."
 
     def safe_execute_plot(
         self,
@@ -1087,14 +1087,14 @@ class SafePythonExecutor:
             raise
         except Exception as exc:
             logger.warning("Safe plot execution failed: %s", exc)
-            return f"绘图执行失败: {exc}"
+            return f"Plot execution failed: {exc}"
 
         figure = execution_env.get(figure_name) if figure_name else None
         if figure is None:
             figure = plt.gcf()
 
         if figure is None:
-            return "绘图代码执行完毕，但未生成图像对象。"
+            return "Plot code executed, but no image object was generated."
 
         if hasattr(figure, "figure") and not hasattr(figure, "savefig"):
             figure = getattr(figure, "figure", figure)
@@ -1102,7 +1102,7 @@ class SafePythonExecutor:
         filename = f"{uuid4().hex}.png"
         save_path = (self.image_dir / filename).resolve()
         if save_path.parent != self.image_dir:
-            raise SafeExecutionError("图片保存路径非法。")
+            raise SafeExecutionError("Image save path is invalid.")
         figure.savefig(save_path, bbox_inches="tight", dpi=100)
         plt.close("all")
 
@@ -1117,7 +1117,7 @@ class SafePythonExecutor:
                 "tool_name": "fig_inter",
             }
         )
-        return "图表已生成"
+        return "Chart generated"
 
     def _validate_and_compile(self, py_code: str):
         try:
@@ -1201,11 +1201,11 @@ class ReadOnlyDataFrameProxy:
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
-            raise SafeExecutionError(f"不允许访问敏感属性: {name}")
+            raise SafeExecutionError(f"Access to forbidden attribute: {name}")
         if name in FORBIDDEN_METHOD_NAMES:
-            raise SafeExecutionError(f"不允许调用危险函数: {name}")
+            raise SafeExecutionError(f"Call to dangerous function: {name}")
         if name not in self._ALLOWED_METHODS:
-            raise SafeExecutionError(f"df 当前仅支持只读访问，属性不可用: {name}")
+            raise SafeExecutionError(f"df is currently read-only, attribute not available: {name}")
 
         attr = getattr(self._source, name)
         if not callable(attr):
@@ -1292,11 +1292,11 @@ class ReadOnlySeriesProxy:
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
-            raise SafeExecutionError(f"不允许访问敏感属性: {name}")
+            raise SafeExecutionError(f"Access to forbidden attribute: {name}")
         if name in FORBIDDEN_METHOD_NAMES:
-            raise SafeExecutionError(f"不允许调用危险函数: {name}")
+            raise SafeExecutionError(f"Call to dangerous function: {name}")
         if name not in self._ALLOWED_METHODS:
-            raise SafeExecutionError(f"Series 当前仅支持只读访问，属性不可用: {name}")
+            raise SafeExecutionError(f"Series is currently read-only, attribute not available: {name}")
 
         attr = getattr(self._source, name)
         if not callable(attr):
@@ -1397,25 +1397,25 @@ EXECUTOR = SafePythonExecutor(image_dir=STATIC_IMAGES_DIR)
 
 
 class PythonCodeInput(BaseModel):
-    py_code: str = Field(description="Python代码。可以使用变量 df、data、viz、stats、profile、ml。")
+    py_code: str = Field(description="Python code. Available variables: df, data, viz, stats, profile, ml.")
 
 
 class FigCodeInput(BaseModel):
-    py_code: str = Field(description="绘图代码。需生成图像对象。")
-    fname: str = Field(description="图像变量名，例如 'fig'。")
+    py_code: str = Field(description="Plotting code. Must generate an image object.")
+    fname: str = Field(description="Image variable name, e.g. 'fig'.")
 
 
 class MLLogisticFitInput(BaseModel):
-    target: str = Field(description="二分类目标列名称，例如 Churn。")
-    features: list[str] | None = Field(default=None, description="可选特征列名单。")
-    test_size: float | None = Field(default=None, description="可选测试集比例。")
-    positive_label: Any | None = Field(default=None, description="可选正类标签。")
+    target: str = Field(description="Binary classification target column name, e.g. Churn.")
+    features: list[str] | None = Field(default=None, description="Optional feature column list.")
+    test_size: float | None = Field(default=None, description="Optional test set ratio.")
+    positive_label: Any | None = Field(default=None, description="Optional positive class label.")
 
 
 class MLLinearRegressionFitInput(BaseModel):
-    target: str = Field(description="数值回归目标列名称。")
-    features: list[str] | None = Field(default=None, description="可选特征列名单。")
-    test_size: float | None = Field(default=None, description="可选测试集比例。")
+    target: str = Field(description="Numeric regression target column name.")
+    features: list[str] | None = Field(default=None, description="Optional feature column list.")
+    test_size: float | None = Field(default=None, description="Optional test set ratio.")
 
 
 class MLMetricsInput(BaseModel):
@@ -1424,7 +1424,7 @@ class MLMetricsInput(BaseModel):
 
 class MLFeatureImportanceInput(BaseModel):
     model_artifact_id: str | None = Field(default=None, description="可选模型 artifact ID。")
-    top_k: int = Field(default=10, description="返回前几个重要特征。")
+    top_k: int = Field(default=10, description="Return top K important features.")
 
 
 class MLLatestInput(BaseModel):
@@ -1437,33 +1437,33 @@ class MLExecuteInput(BaseModel):
     )
     model_type: Literal["logistic_regression", "linear_regression"] | None = Field(
         default=None,
-        description="训练动作时使用的模型类型。",
+        description="Model type used for the training action.",
     )
-    target: str | None = Field(default=None, description="训练动作的目标列。")
-    features: list[str] | None = Field(default=None, description="可选特征列名单。")
-    test_size: float | None = Field(default=None, description="可选测试集比例。")
-    positive_label: Any | None = Field(default=None, description="可选正类标签。")
+    target: str | None = Field(default=None, description="Target column for the training action.")
+    features: list[str] | None = Field(default=None, description="Optional feature column list.")
+    test_size: float | None = Field(default=None, description="Optional test set ratio.")
+    positive_label: Any | None = Field(default=None, description="Optional positive class label.")
     model_artifact_id: str | None = Field(default=None, description="可选模型 artifact ID。")
-    top_k: int = Field(default=10, description="返回前几个重要特征。")
+    top_k: int = Field(default=10, description="Return top K important features.")
     artifact_type: str | None = Field(default=None, description="查询 latest 时的 artifact 类型。")
 
 
 class StatsExecuteInput(BaseModel):
     action: Literal["describe_numeric", "describe_categorical", "group_summary", "correlation", "t_test", "chi_square", "anova", "latest"] = Field(
-        description="要执行的统计动作。"
+        description="Statistical action to execute."
     )
-    columns: list[str] | None = Field(default=None, description="描述统计或相关性分析所需列。")
-    group_by: str | None = Field(default=None, description="分组汇总使用的分组列。")
-    metrics: list[dict[str, Any]] | None = Field(default=None, description="分组汇总的指标定义。")
-    sort_by: str | None = Field(default=None, description="分组汇总的排序列。")
-    ascending: bool = Field(default=False, description="是否升序排序。")
-    top_n: int | None = Field(default=None, description="分组汇总返回前几行。")
+    columns: list[str] | None = Field(default=None, description="Columns needed for descriptive statistics or correlation analysis.")
+    group_by: str | None = Field(default=None, description="Group column used for group summary.")
+    metrics: list[dict[str, Any]] | None = Field(default=None, description="Metric definitions for group summary.")
+    sort_by: str | None = Field(default=None, description="Sort column for group summary.")
+    ascending: bool = Field(default=False, description="Whether to sort in ascending order.")
+    top_n: int | None = Field(default=None, description="Number of top rows to return for group summary.")
     value_col: str | None = Field(default=None, description="t 检验或 ANOVA 的数值列。")
-    group_col: str | None = Field(default=None, description="t 检验、ANOVA 或卡方检验的分组列。")
+    group_col: str | None = Field(default=None, description="Group column for t-test, ANOVA, or chi-square test.")
     group_a: Any | None = Field(default=None, description="t 检验组 A 的标签。")
     group_b: Any | None = Field(default=None, description="t 检验组 B 的标签。")
-    col_a: str | None = Field(default=None, description="卡方检验的列 A。")
-    col_b: str | None = Field(default=None, description="卡方检验的列 B。")
+    col_a: str | None = Field(default=None, description="Column A for chi-square test.")
+    col_b: str | None = Field(default=None, description="Column B for chi-square test.")
     artifact_type: str | None = Field(default=None, description="查询 latest 时的 artifact 类型。")
 
 
@@ -1625,7 +1625,7 @@ def _structured_error_extra(
 def _is_execution_failure_text(result: str | None) -> bool:
     if not isinstance(result, str):
         return False
-    return result.startswith("代码执行失败:") or result.startswith("绘图执行失败:")
+    return result.startswith("Code execution failed:") or result.startswith("Plot execution failed:")
 
 
 def _record_tool_audit(
@@ -1665,13 +1665,13 @@ def _record_tool_audit(
 @tool(args_schema=PythonCodeInput)
 def python_inter(py_code: str) -> str:
     """
-    安全执行受限的数据分析代码，仅暴露白名单 helper API。
+    Safely execute restricted data analysis code, exposing only whitelisted helper APIs.
     """
     start = time.perf_counter()
     dataset_id = get_current_dataset_id()
     df = _get_dataset_df()
     if df is None:
-        result = "错误：当前没有可用数据集。请先上传数据。"
+        result = "错误：No active dataset. Please upload data first."
         _record_tool_audit(
             tool_name="python_inter",
             dataset_id=dataset_id,
@@ -1749,7 +1749,7 @@ def python_inter(py_code: str) -> str:
         )
         return result
     except SafeExecutionError as exc:
-        result = f"代码被安全策略拦截: {exc}"
+        result = f"Code blocked by security policy: {exc}"
         _record_tool_audit(
             tool_name="python_inter",
             dataset_id=dataset_id,
@@ -1792,14 +1792,14 @@ def python_inter(py_code: str) -> str:
 @tool(args_schema=FigCodeInput)
 def fig_inter(py_code: str, fname: str) -> str:
     """
-    安全执行绘图代码并保存生成的图片。
+    Safely execute plotting code and save the generated image.
     """
     start = time.perf_counter()
     dataset_id = get_current_dataset_id()
     tool_args = _audit_tool_args(fname=fname)
     df = _get_dataset_df()
     if df is None:
-        result = "错误：当前没有可用数据集。请先上传数据。"
+        result = "错误：No active dataset. Please upload data first."
         _record_tool_audit(
             tool_name="fig_inter",
             dataset_id=dataset_id,
@@ -1878,7 +1878,7 @@ def fig_inter(py_code: str, fname: str) -> str:
         )
         return result
     except SafeExecutionError as exc:
-        result = f"绘图代码被安全策略拦截: {exc}"
+        result = f"Plot code blocked by security policy: {exc}"
         _record_tool_audit(
             tool_name="fig_inter",
             dataset_id=dataset_id,
@@ -1923,11 +1923,11 @@ def fig_inter(py_code: str, fname: str) -> str:
 @tool(args_schema=MLLogisticFitInput)
 def ml_logistic_fit(target: str, features: list[str] | None = None, test_size: float | None = None, positive_label: Any | None = None) -> str:
     """
-    直接训练 baseline 逻辑回归模型，并返回结构化 model_result。
+    Train a baseline logistic regression model and return structured model_result.
     """
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        return "错误：No active dataset. Please upload data first."
 
     _, _, _, _, ml = _build_helper_api(df)
     try:
@@ -1945,11 +1945,11 @@ def ml_logistic_fit(target: str, features: list[str] | None = None, test_size: f
 @tool(args_schema=MLLinearRegressionFitInput)
 def ml_linear_regression_fit(target: str, features: list[str] | None = None, test_size: float | None = None) -> str:
     """
-    直接训练 baseline 线性回归模型，并返回结构化 model_result。
+    Train a baseline linear regression model and return structured model_result.
     """
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        return "错误：No active dataset. Please upload data first."
 
     _, _, _, _, ml = _build_helper_api(df)
     try:
@@ -1962,11 +1962,11 @@ def ml_linear_regression_fit(target: str, features: list[str] | None = None, tes
 @tool(args_schema=MLMetricsInput)
 def ml_metrics(model_artifact_id: str | None = None) -> str:
     """
-    返回已有模型的 metrics_result。
+    Return metrics_result for an existing model.
     """
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        return "错误：No active dataset. Please upload data first."
 
     _, _, _, _, ml = _build_helper_api(df)
     try:
@@ -1979,11 +1979,11 @@ def ml_metrics(model_artifact_id: str | None = None) -> str:
 @tool(args_schema=MLFeatureImportanceInput)
 def ml_feature_importance(model_artifact_id: str | None = None, top_k: int = 10) -> str:
     """
-    返回已有模型的 feature_importance_result。
+    Return feature_importance_result for an existing model.
     """
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        return "错误：No active dataset. Please upload data first."
 
     _, _, _, _, ml = _build_helper_api(df)
     try:
@@ -1996,11 +1996,11 @@ def ml_feature_importance(model_artifact_id: str | None = None, top_k: int = 10)
 @tool(args_schema=MLLatestInput)
 def ml_latest(artifact_type: str | None = None) -> str:
     """
-    返回最近一次 ML 结构化结果。
+    Return the latest ML structured result.
     """
     df = _get_dataset_df()
     if df is None:
-        return "错误：当前没有可用数据集。请先上传数据。"
+        return "错误：No active dataset. Please upload data first."
 
     _, _, _, _, ml = _build_helper_api(df)
     try:
@@ -2024,11 +2024,11 @@ def ml_execute(
 ) -> str:
     """
     统一的 baseline ML 唯一入口。
-    ML 请求请优先使用这个工具，不要先走 python_inter。
-    - action="train": 训练逻辑回归或线性回归
-    - action="metrics": 返回模型指标
-    - action="feature_importance": 返回特征重要性
-    - action="latest": 返回最近一次 ML 结构化结果
+    For ML requests, prefer this tool over python_inter.
+    - action="train": Train logistic or linear regression
+    - action="metrics": Return model metrics
+    - action="feature_importance": Return feature importance
+    - action="latest": Return the latest ML structured result
     """
     start = time.perf_counter()
     dataset_id = get_current_dataset_id()
@@ -2045,7 +2045,7 @@ def ml_execute(
     )
     df = _get_dataset_df()
     if df is None:
-        result = "错误：当前没有可用数据集。请先上传数据。"
+        result = "错误：No active dataset. Please upload data first."
         _record_tool_audit(
             tool_name="ml_execute",
             dataset_id=dataset_id,
@@ -2062,7 +2062,7 @@ def ml_execute(
         _, _, _, _, ml = _build_helper_api(df)
         if action == "train":
             if not target:
-                result = "错误：训练动作必须提供 target。"
+                result = "Error: training action must provide target."
                 _record_tool_audit(
                     tool_name="ml_execute",
                     dataset_id=dataset_id,
@@ -2161,7 +2161,7 @@ def stats_execute(
     artifact_type: str | None = None,
 ) -> str:
     """
-    统一的统计分析入口。统计类请求优先使用这个工具，而不是自己写 Python 代码。
+    Unified statistical analysis entry point. Prefer this tool for statistics requests over writing custom Python code.
     """
     start = time.perf_counter()
     dataset_id = get_current_dataset_id()
@@ -2183,7 +2183,7 @@ def stats_execute(
     )
     df = _get_dataset_df()
     if df is None:
-        result = "错误：当前没有可用数据集。请先上传数据。"
+        result = "错误：No active dataset. Please upload data first."
         _record_tool_audit(
             tool_name="stats_execute",
             dataset_id=dataset_id,
@@ -2224,7 +2224,7 @@ def stats_execute(
             )
         elif action == "correlation":
             if not columns:
-                result = "错误：correlation 需要至少提供两列。"
+                result = "Error: correlation requires at least two columns."
                 _record_tool_audit(
                     tool_name="stats_execute",
                     dataset_id=dataset_id,

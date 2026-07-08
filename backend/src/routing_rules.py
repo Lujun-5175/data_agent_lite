@@ -233,7 +233,7 @@ def _heuristic_interpret_request(context: RoutingContext) -> IntentInterpretatio
     ml_decision = decide_ml_intent(context)
 
     follow_up_model_hint = follow_up_requested and any(
-        token in normalized for token in ("model", "模型", "指标", "metrics", "feature importance", "重要特征")
+        token in normalized for token in ("model", "模型", "指标", "metrics", "feature importance", "important features")
     )
     requires_ml = ml_decision.matched or explicit_ml_score >= SETTINGS.routing_ml_intent_threshold or follow_up_model_hint
     requires_chart = chart_requested

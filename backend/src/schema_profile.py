@@ -51,7 +51,7 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
         flags = _build_flags(semantic_type, unique_count=unique_count, non_null_count=non_null_count, column_name=str(column))
 
         if missing_ratio >= SETTINGS.profile_high_missing_ratio_threshold:
-            notes.append(f"High missing rate ({missing_ratio:.1%}). ")
+            notes.append(f"High missing rate ({missing_ratio:.1%}).")
             semantic_evidence.append("high_missing_ratio")
 
         if semantic_type == "categorical" and unique_ratio >= SETTINGS.profile_high_cardinality_ratio_threshold:
@@ -118,7 +118,7 @@ def _infer_semantic_type(
 
     if pd.api.types.is_numeric_dtype(series):
         if int(series.nunique(dropna=True)) == 2:
-            notes.append("二值列，可能可用作标签列。")
+            notes.append("Binary column，Potentially usable as label column。")
             semantic_evidence.extend(["numeric_dtype", "binary_unique_count"])
             return "binary_label_candidate"
         semantic_evidence.append("numeric_dtype")
@@ -132,13 +132,13 @@ def _infer_semantic_type(
 
     unique_count = int(values.nunique(dropna=True))
     if unique_count == 2:
-        notes.append("二值分类列，可能可用作标签列。")
+        notes.append("Binary categorical column，Potentially usable as label column。")
         semantic_evidence.append("binary_unique_count")
         return "binary_label_candidate"
 
     datetime_ratio = _datetime_parse_ratio(values)
     if datetime_ratio >= SETTINGS.profile_datetime_parse_ratio_threshold:
-        notes.append(f"Date/time pattern detected（可解析比例 {datetime_ratio:.1%}). ")
+        notes.append(f"Date/time pattern detected (parsable ratio: {datetime_ratio:.1%}).")
         semantic_evidence.extend(["datetime_parse_ratio_high", f"datetime_ratio={datetime_ratio:.2f}"])
         return "datetime_like"
 

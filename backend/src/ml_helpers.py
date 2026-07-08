@@ -70,9 +70,9 @@ class BaselineMLService:
                 stratify=y_binary,
             )
         except ValueError as exc:
-            raise MLHelperError("目标列类别分布不满足当前测试集划分要求，请增加样本或调整 test_size. ") from exc
+            raise MLHelperError("Target column class distribution does not meet current test split requirements. Increase samples or adjust  test_size. ") from exc
         if y_train.nunique() < 2 or y_test.nunique() < 2:
-            raise MLHelperError("训练集或测试集类别不足，无法稳定评估模型. ")
+            raise MLHelperError("Training or test set has insufficient classes. Cannot stably evaluate model. ")
 
         model_pipeline = Pipeline(
             steps=[
@@ -97,7 +97,7 @@ class BaselineMLService:
         if inferred["warning"]:
             warnings.append(str(inferred["warning"]))
         if not coefficients:
-            warnings.append("未能稳定提取模型系数，feature_importance 可能受限. ")
+            warnings.append("Failed to stably extract model coefficients，feature_importance 可能受限. ")
 
         payload = {
             "model_type": "logistic_regression",
@@ -139,7 +139,7 @@ class BaselineMLService:
         x = bundle.x.loc[valid_mask].copy(deep=True)
         y = y_numeric.loc[valid_mask]
         if len(y.index) < 20:
-            raise MLHelperError("有效样本不足，建议至少 20 行再训练线性回归模型. ")
+            raise MLHelperError("Insufficient effective samples. Recommended at least  20  rows to retrain linear regression model. ")
 
         test_size_value = self._resolve_test_size(test_size)
         x_train, x_test, y_train, y_test = train_test_split(
@@ -167,9 +167,9 @@ class BaselineMLService:
 
         warnings = list(bundle.warnings)
         if len(y.index) != len(bundle.y.index):
-            warnings.append(f"目标列转换为数值后丢弃了 {int(len(bundle.y.index) - len(y.index))} 行. ")
+            warnings.append(f"Target column after numeric conversion discarded  {int(len(bundle.y.index) - len(y.index))} 行. ")
         if not coefficients:
-            warnings.append("未能稳定提取线性回归系数. ")
+            warnings.append("Failed to stably extract linear regression coefficients. ")
 
         payload = {
             "model_type": "linear_regression",
@@ -208,14 +208,14 @@ class BaselineMLService:
 
     def feature_importance(self, *, model_artifact_id: str | None = None, top_k: int = 10) -> dict[str, Any]:
         if top_k <= 0:
-            raise MLHelperError("top_k 必须为正整数. ")
+            raise MLHelperError("top_k must be a positive integer. ")
         model_artifact = self._resolve_model_artifact(model_artifact_id=model_artifact_id)
         coefficient_items = model_artifact.get("coefficient_items")
         warnings: list[str] = []
         if not isinstance(coefficient_items, list):
             coefficient_items = []
         if not coefficient_items:
-            warnings.append("当前模型未提供可解释的系数特征重要性. ")
+            warnings.append("Current model does not provide interpretable coefficient-based feature importance. ")
         sorted_items = sorted(
             [item for item in coefficient_items if isinstance(item, dict)],
             key=lambda item: float(item.get("abs_importance", 0.0)),
@@ -241,7 +241,7 @@ class BaselineMLService:
         resolved_artifact_type = self._normalize_latest_artifact_type(artifact_type)
         artifact = get_artifact_repository().get_latest(self.dataset_id, artifact_type=resolved_artifact_type)
         if artifact is None:
-            raise MLHelperError("当前还没有可复用的模型结果，请先训练 baseline 模型. ")
+            raise MLHelperError("No reusable model result yet. Please train a model first baseline 模型. ")
         return artifact
 
     def _prepare_inputs(
@@ -269,13 +269,13 @@ class BaselineMLService:
         if model_artifact_id:
             artifact = get_artifact_repository().get_by_artifact_id(model_artifact_id)
             if artifact is None:
-                raise MLHelperError("指定的模型 artifact 不存在. ")
+                raise MLHelperError("Specified model artifact does not exist. ")
             if artifact.get("dataset_id") != self.dataset_id:
-                raise MLHelperError("指定的模型 artifact 不属于当前数据集. ")
+                raise MLHelperError("Specified model artifact does not belong to current dataset. ")
         else:
             artifact = get_artifact_repository().get_latest(self.dataset_id, artifact_type="model_result")
             if artifact is None:
-                raise MLHelperError("当前没有可用模型结果，请先训练 baseline 模型. ")
+                raise MLHelperError("No model results available. Please train a baseline model first. ")
 
         if artifact.get("artifact_type") != "model_result":
             raise MLHelperError("指定 artifact 不是 model_result. ")
@@ -290,22 +290,22 @@ class BaselineMLService:
     def _validate_stratified_split(self, y_binary: pd.Series, test_size: float) -> None:
         total_rows = int(len(y_binary.index))
         if total_rows < 10:
-            raise MLHelperError("样本量过小，无法进行分层训练/测试划分. ")
+            raise MLHelperError("Sample size too small for stratified train/test split. ")
 
         counts = y_binary.value_counts(dropna=False)
         if len(counts.index) != 2:
-            raise MLHelperError("目标列需要恰好两类才能进行分层二分类训练. ")
+            raise MLHelperError("Target column needs exactly 2 classes for stratified binary classification. ")
 
         minority = int(counts.min())
         test_rows = int(round(total_rows * test_size))
         train_rows = total_rows - test_rows
         if test_rows < 2 or train_rows < 2:
-            raise MLHelperError("当前 test_size 导致训练集或测试集过小，无法稳定训练. ")
+            raise MLHelperError("Current test_size makes train/test sets too small for stable training. ")
 
         # Stratified split requires each class to appear in both train and test.
         # Conservative rule: minority class should have at least 2 samples.
         if minority < 2:
-            raise MLHelperError("目标列类别分布不平衡且少数类样本不足，无法进行分层划分. ")
+            raise MLHelperError("Target class distribution imbalanced with insufficient minority samples for stratified split. ")
 
     def _extract_coefficients(self, model_pipeline: Pipeline) -> list[dict[str, Any]]:
         model = model_pipeline.named_steps.get("model")

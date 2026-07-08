@@ -209,7 +209,7 @@ def prepare_model_inputs(
         candidate_features = []
 
     if not candidate_features:
-        raise ModelPrepPlanError("没有可用于建模的特征列。")
+        raise ModelPrepPlanError("No feature columns available for modeling。")
 
     numeric_features: list[str] = []
     categorical_features: list[str] = []
@@ -226,7 +226,7 @@ def prepare_model_inputs(
             continue
         if semantic_type == "datetime_like":
             excluded_columns.append({"column": feature, "reason": "datetime_like"})
-            warnings.append(f"{feature}  is datetime_like，当前 baseline ML 阶段默认排除。")
+            warnings.append(f"{feature}  is datetime_like，当前 baseline ML Stage excluded by default: 。")
             continue
 
         usable_features.append(feature)
@@ -236,25 +236,25 @@ def prepare_model_inputs(
             categorical_features.append(feature)
 
     if len(usable_features) > SETTINGS.ml_max_feature_count:
-        warnings.append(f"特征数超过上限 {SETTINGS.ml_max_feature_count}，仅保留前 {SETTINGS.ml_max_feature_count} 个。")
+        warnings.append(f"Feature count exceeds limit {SETTINGS.ml_max_feature_count}，仅保留前 {SETTINGS.ml_max_feature_count} 个。")
         usable_features = usable_features[: SETTINGS.ml_max_feature_count]
         numeric_features = [item for item in numeric_features if item in usable_features]
         categorical_features = [item for item in categorical_features if item in usable_features]
 
     if not usable_features:
-        raise ModelPrepPlanError("过滤后没有可用特征列，无法训练 baseline 模型。")
+        raise ModelPrepPlanError("No usable feature columns after filtering，无法训练 baseline 模型。")
 
     data = df.loc[:, usable_features + [selected_target]].copy(deep=True)
     valid_mask = data[selected_target].notna()
     dropped_target_na = int((~valid_mask).sum())
     if dropped_target_na > 0:
-        warnings.append(f"目标列存在缺失，已丢弃 {dropped_target_na} 行。")
+        warnings.append(f"Target column has missing values, dropped  {dropped_target_na} 行。")
     data = data.loc[valid_mask]
     if data.empty:
-        raise ModelPrepPlanError("目标列有效样本为空，无法训练模型。")
+        raise ModelPrepPlanError("Target column effective samples are empty，Cannot train model。")
 
     if len(data.index) > SETTINGS.ml_max_training_rows:
-        warnings.append(f"样本数超过上限 {SETTINGS.ml_max_training_rows}，已截断为前 {SETTINGS.ml_max_training_rows} 行。")
+        warnings.append(f"Sample count exceeds limit {SETTINGS.ml_max_training_rows}, truncated to top {SETTINGS.ml_max_training_rows} 行。")
         data = data.head(SETTINGS.ml_max_training_rows).copy(deep=True)
 
     x = data.loc[:, usable_features].copy(deep=True)
@@ -291,7 +291,7 @@ def prepare_model_inputs(
     if categorical_features:
         transformers.append(("cat", categorical_transformer, categorical_features))
     if not transformers:
-        raise ModelPrepPlanError("当前数据不包含可用于 baseline ML 的数值/分类特征。")
+        raise ModelPrepPlanError("Current data does not contain usable  baseline ML 的数值/分类特征。")
 
     preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
     preprocessor.fit(x)
@@ -299,7 +299,7 @@ def prepare_model_inputs(
         feature_names = preprocessor.get_feature_names_out().tolist()
     except Exception:
         feature_names = [str(col) for col in usable_features]
-        warnings.append("未能稳定提取转换后特征名，将使用原始列名近似表示。")
+        warnings.append("Failed to stably extract transformed feature names，Will use original column names as approximation。")
 
     prep_summary = {
         "target": selected_target,
@@ -331,7 +331,7 @@ def infer_positive_label(series: pd.Series, *, explicit_label: Any | None = None
 
     non_null = series.dropna()
     if non_null.empty:
-        return {"positive_label": None, "source": "ambiguous", "warning": "目标列为空，无法推断正类标签。"}
+        return {"positive_label": None, "source": "ambiguous", "warning": "Target column is empty. Cannot infer positive class label."}
 
     if pd.api.types.is_bool_dtype(non_null):
         return {"positive_label": True, "source": "boolean_default", "warning": None}
@@ -345,14 +345,14 @@ def infer_positive_label(series: pd.Series, *, explicit_label: Any | None = None
             return {
                 "positive_label": max(unique_numeric),
                 "source": "binary_numeric_default",
-                "warning": f"目标列为二值数值 {unique_numeric}，默认取较大值为正类。",
+                "warning": f"Target column is binary numeric {unique_numeric}，Defaulting to larger value as positive class。",
             }
-        return {"positive_label": None, "source": "ambiguous", "warning": "目标列不是稳定二值标签，无法自动推断正类。"}
+        return {"positive_label": None, "source": "ambiguous", "warning": "Target column is not a stable binary label，Cannot automatically infer positive class。"}
 
     normalized = non_null.astype(str).str.strip()
     unique_text = [item for item in sorted(normalized.unique().tolist()) if item != ""]
     if len(unique_text) != 2:
-        return {"positive_label": None, "source": "ambiguous", "warning": f"目标标签共有 {len(unique_text)} 类，当前仅支持二分类。"}
+        return {"positive_label": None, "source": "ambiguous", "warning": f"Target labels total {len(unique_text)} 类，Currently only supports binary classification。"}
 
     normalized_map = {item.lower(): item for item in unique_text}
     positive_hits = [value for key, value in normalized_map.items() if key in SETTINGS.positive_label_hints]
@@ -366,10 +366,10 @@ def infer_positive_label(series: pd.Series, *, explicit_label: Any | None = None
                 return {
                     "positive_label": item,
                     "source": "hint_match",
-                    "warning": f"按负类标签 {negative_hits[0]} 反推正类 {item}。",
+                    "warning": f"Inferred from negative label {negative_hits[0]}, positive class = {item}。",
                 }
 
-    return {"positive_label": None, "source": "ambiguous", "warning": "未能可靠推断正类，请显式提供 positive_label。"}
+    return {"positive_label": None, "source": "ambiguous", "warning": "Could not reliably infer positive class. Please provide positive_label explicitly."}
 
 
 def _profile_column_map(profile_artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:

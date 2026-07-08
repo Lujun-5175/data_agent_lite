@@ -31,17 +31,17 @@ class StructuredExecutionError(BaseModel):
     repair_prompt: str | None = None
 
 
-_TOOL_PREFIX_RE = re.compile(r"^(?:代码执行失败|绘图执行失败|错误)\s*[:：]\s*", re.IGNORECASE)
+_TOOL_PREFIX_RE = re.compile(r"^(?:Code execution failed|Plot execution failed|错误)\s*[:：]\s*", re.IGNORECASE)
 _QUOTED_COLUMN_RE = re.compile(r"^\s*['\"](?P<column>[^'\"]+)['\"]\s*$")
 _KEYERROR_RE = re.compile(r"KeyError\s*[:(]\s*['\"](?P<column>[^'\"]+)['\"]\s*\)?", re.IGNORECASE)
 _KEYERROR_CALL_RE = re.compile(r"KeyError\((?P<quote>['\"])(?P<column>[^'\"]+)(?P=quote)\)", re.IGNORECASE)
 _NOT_IN_INDEX_RE = re.compile(r"\[\s*['\"](?P<column>[^'\"]+)['\"]\s*\]\s+not in index", re.IGNORECASE)
 _NOT_IN_INDEX_QUOTED_RE = re.compile(r"['\"](?P<column>[^'\"]+)['\"]\s+not in index", re.IGNORECASE)
-_COLUMN_NOT_FOUND_RE = re.compile(r"(?:列不存在|排序列不存在)\s*[:：]\s*['\"]?(?P<column>[^'\"\n\r]+?)['\"]?(?:\s|$)", re.IGNORECASE)
+_COLUMN_NOT_FOUND_RE = re.compile(r"(?:Column does not exist|排序Column does not exist)\s*[:：]\s*['\"]?(?P<column>[^'\"\n\r]+?)['\"]?(?:\s|$)", re.IGNORECASE)
 _NAME_ERROR_RE = re.compile(r"name\s+['\"](?P<name>[^'\"]+)['\"]\s+is\s+not\s+defined", re.IGNORECASE)
-_TARGET_ERROR_RE = re.compile(r"目标列(?:不存在|不适合建模)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
-_FEATURE_ERROR_RE = re.compile(r"特征列(?:不存在)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
-_GROUP_ERROR_RE = re.compile(r"(?:group_by|group col|group_col|分组列)\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
+_TARGET_ERROR_RE = re.compile(r"Target column(?:不存在|Not suitable for modeling)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
+_FEATURE_ERROR_RE = re.compile(r"Feature column(?:不存在)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
+_GROUP_ERROR_RE = re.compile(r"(?:group_by|group col|group_col|Group column)\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
 
 
 def extract_missing_column(error_message: str) -> str | None:
@@ -92,7 +92,7 @@ def suggest_similar_columns(
         score = SequenceMatcher(None, normalized_missing, normalized_candidate).ratio()
         if score < 0.6:
             continue
-        reason = "列名字符串相似"
+        reason = "Column name string similarity"
         scored.append(
             RepairSuggestion(
                 original=missing_column,
@@ -211,7 +211,7 @@ def build_repair_prompt(
     tool_action: str | None = None,
 ) -> str:
     lines = [
-        "请修复上一次执行失败的代码，尽量只做最小改动。",
+        "Please fix the previously failed code，Make minimal changes where possible。",
         f"error_type: {structured_error.error_type}",
         f"raw_message: {structured_error.raw_message}",
     ]
@@ -237,7 +237,7 @@ def build_repair_prompt(
         lines.append(f"target_candidates: {', '.join(structured_error.target_candidates)}")
     if structured_error.feature_candidates:
         lines.append(f"feature_candidates: {', '.join(structured_error.feature_candidates)}")
-    lines.append("不要使用 import、文件访问、eval、exec 或任何被禁止的 API。")
+    lines.append("Do not use  import, File access, eval, exec, or any other forbidden APIs.")
     if original_code:
         lines.append("original_code:")
         lines.append("```python")
@@ -345,7 +345,7 @@ def _looks_like_empty_result(message: str) -> bool:
 
 def _looks_like_invalid_groupby(message: str) -> bool:
     lowered = message.casefold()
-    return any(needle in lowered for needle in ("group_by", "group col", "group_col", "分组列"))
+    return any(needle in lowered for needle in ("group_by", "group col", "group_col", "Group column"))
 
 
 def _looks_like_plotting_failure(message: str) -> bool:
@@ -368,11 +368,11 @@ def _looks_like_invalid_target(message: str) -> bool:
     return any(
         needle in lowered
         for needle in (
-            "目标列",
+            "Target column",
             "positive_label",
             "正类",
             "target",
-            "不适合建模",
+            "Not suitable for modeling",
         )
     )
 
@@ -382,10 +382,10 @@ def _looks_like_invalid_feature_set(message: str) -> bool:
     return any(
         needle in lowered
         for needle in (
-            "特征列",
-            "可用特征列",
+            "Feature column",
+            "可用Feature column",
             "feature",
-            "没有可用于建模的特征列",
+            "No usable feature column for modeling",
         )
     )
 
@@ -397,7 +397,7 @@ def _looks_like_safe_execution_blocked(class_name: str | None, message: str) -> 
     return any(
         needle in lower_message
         for needle in (
-            "安全策略拦截",
+            "Blocked by security policy",
             "不允许",
             "危险",
             "敏感",

@@ -37,12 +37,12 @@ def verify_task_plan(*, task_plan: TaskPlan, executed_task_ids: list[str], produ
 
     reasons: list[str] = []
     if missing_task_ids:
-        reasons.append(f"未完成任务：{', '.join(missing_task_ids)}")
+        reasons.append(f"Incomplete tasks：{', '.join(missing_task_ids)}")
     if missing_outputs:
-        reasons.append(f"缺少输出：{', '.join(missing_outputs)}")
+        reasons.append(f"Missing output：{', '.join(missing_outputs)}")
     return VerificationResult(
         status="incomplete",
         missing_outputs=missing_outputs,
         failed_task_ids=missing_task_ids,
-        reason="；".join(reasons) if reasons else "计划未完整执行。",
+        reason="；".join(reasons) if reasons else "Plan not fully executed。",
     )

@@ -168,14 +168,14 @@ class InMemoryDatasetRepository:
         with self._lock:
             dataset = self._datasets.get(dataset_id)
         if dataset is None:
-            raise DatasetNotFoundError("数据集不存在或已被删除。")
+            raise DatasetNotFoundError("Dataset not found or has been deleted.")
         return dataset
 
     def delete_dataset(self, dataset_id: str) -> Dataset:
         with self._lock:
             dataset = self._datasets.pop(dataset_id, None)
             if dataset is None:
-                raise DatasetNotFoundError("数据集不存在或已被删除。")
+                raise DatasetNotFoundError("Dataset not found or has been deleted.")
         logger.info("Dataset deleted", extra={"dataset_id": dataset_id})
         return dataset
 
@@ -197,7 +197,7 @@ class InMemoryDatasetRepository:
             with self._lock:
                 dataset = self._datasets.get(dataset_id)
                 if dataset is None:
-                    raise DatasetNotFoundError("数据集不存在或已被删除。")
+                    raise DatasetNotFoundError("Dataset not found or has been deleted.")
                 if dataset.preprocessed:
                     return dataset
 
@@ -217,7 +217,7 @@ class InMemoryDatasetRepository:
                 with self._lock:
                     dataset = self._datasets.get(dataset_id)
                     if dataset is None:
-                        raise DatasetNotFoundError("数据集不存在或已被删除。")
+                        raise DatasetNotFoundError("Dataset not found or has been deleted.")
                     if dataset.preprocessed:
                         return dataset
                     error = self._preprocess_errors.get(dataset_id)
@@ -251,7 +251,7 @@ class InMemoryDatasetRepository:
                     done_event = self._preprocess_events.pop(dataset_id, None)
                     if done_event is not None:
                         done_event.set()
-                    raise DatasetNotFoundError("数据集不存在或已被删除。")
+                    raise DatasetNotFoundError("Dataset not found or has been deleted.")
 
                 if not dataset.preprocessed:
                     get_artifact_repository().register(dataset.dataset_id, preprocess_artifact)
@@ -277,7 +277,7 @@ class InMemoryDatasetRepository:
     def get_analysis_preprocess_artifact(self, dataset_id: str) -> dict[str, Any]:
         dataset = self.ensure_preprocessed(dataset_id)
         if dataset.analysis_preprocess_artifact is None:
-            raise DatasetLoadError("分析预处理信息暂不可用。")
+            raise DatasetLoadError("Analysis preprocessing info not available。")
         return dataset.analysis_preprocess_artifact
 
     def get_or_create_model_prep_plan(
@@ -363,7 +363,7 @@ def _build_preprocessing_log(preprocess_artifact: dict[str, Any]) -> list[str]:
     for warning in warnings if isinstance(warnings, list) else []:
         log_entries.append(f"warning: {warning}")
     if not log_entries:
-        log_entries.append("analysis 阶段未执行额外预处理。")
+        log_entries.append("analysis No additional preprocessing performed at this stage。")
     return log_entries
 
 
@@ -398,13 +398,13 @@ def load_csv_file(file_path: Path, original_filename: str) -> Dataset:
         except pd.errors.EmptyDataError as exc:
             raise DatasetLoadError("CSV 文件为空，无法加载。") from exc
         except pd.errors.ParserError as exc:
-            raise DatasetLoadError("CSV 文件格式不正确，无法解析。") from exc
+            raise DatasetLoadError("Invalid CSV format, cannot parse.") from exc
         except Exception as exc:
             logger.exception("Unexpected error while loading CSV")
-            raise DatasetLoadError("CSV 文件读取失败，请检查文件内容是否正确。") from exc
+            raise DatasetLoadError("CSV File read failed. Please check the file content.") from exc
 
     raise DatasetLoadError(
-        f"CSV 文件编码暂不受支持，请使用 {', '.join(SUPPORTED_ENCODINGS)} 之一后重试。"
+        f"CSV encoding not supported. Please use {', '.join(SUPPORTED_ENCODINGS)} and try again."
     )
 
 
@@ -427,13 +427,13 @@ def get_data_info(dataset_id: str) -> str:
     dataset.working_df.info(buf=buffer)
     preprocessing_lines = "\n".join(f"- {entry}" for entry in dataset.preprocessing_log)
     return (
-        f"数据来源文件: {dataset.original_filename}\n"
+        f"Source file: {dataset.original_filename}\n"
         f"dataset_id: {dataset.dataset_id}\n"
-        f"编码: {dataset.encoding}\n"
-        f"原始维度: {dataset.original_row_count} 行 × {len(dataset.raw_df.columns)} 列\n"
-        f"分析副本维度: {dataset.row_count} 行 × {dataset.column_count} 列\n"
-        f"分析基于: {dataset.analysis_basis}\n"
-        f"预处理日志:\n{preprocessing_lines}\n"
+        f"Encoding: {dataset.encoding}\n"
+        f"Original shape: {dataset.original_row_count} rows x {len(dataset.raw_df.columns)} cols\n"
+        f"Analysis shape: {dataset.row_count} rows x {dataset.column_count} cols\n"
+        f"Analysis basis: {dataset.analysis_basis}\n"
+        f"Preprocessing log:\n{preprocessing_lines}\n"
         f"{'-' * 30}\n"
         f"{buffer.getvalue()}"
     )
@@ -513,7 +513,7 @@ def calculate_correlation(dataset_id: str, col1: str, col2: str) -> dict[str, An
     df = dataset.working_df
 
     if col1 not in df.columns or col2 not in df.columns:
-        raise DatasetLoadError("指定的列不存在。")
+        raise DatasetLoadError("Specified column does not exist.")
 
     series1 = df[col1]
     series2 = df[col2]
@@ -526,7 +526,7 @@ def calculate_correlation(dataset_id: str, col1: str, col2: str) -> dict[str, An
         "column2": col2,
         "correlation_type": "pearson" if is_numeric_1 and is_numeric_2 else "unsupported",
         "value": None,
-        "interpretation": "当前版本暂不支持该类型相关性分析",
+        "interpretation": "This type of correlation analysis is not supported in the current version.",
     }
 
     if not (is_numeric_1 and is_numeric_2):
@@ -560,7 +560,7 @@ def _interpret_correlation(value: float) -> str:
     elif value < 0:
         direction = "负相关"
     else:
-        direction = "无明显线性相关"
+        direction = "No significant linear correlation"
 
     if value == 0:
         return direction

@@ -135,14 +135,14 @@ async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     set_failure_stage("validation")
-    return error_response(422, "validation_error", "请求参数不合法，请检查后重试。")
+    return error_response(422, "validation_error", "Invalid request parameters. Please check and try again.")
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     set_failure_stage("http")
     logger.exception("Unhandled server exception")
-    return error_response(500, "internal_error", "服务器内部错误，请稍后重试。")
+    return error_response(500, "internal_error", "Internal server error. Please try again later.")
 
 
 @app.get("/")
@@ -191,7 +191,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
     stored_path = (TEMP_DATA_DIR / safe_filename).resolve()
     temp_dir_resolved = TEMP_DATA_DIR.resolve()
     if temp_dir_resolved != stored_path.parent:
-        raise AppError("invalid_file_type", "Upload path is not safe，已拒绝请求。", 400)
+        raise AppError("invalid_file_type", "Upload path is not safe. Request rejected.", 400)
 
     bytes_written = 0
     try:
@@ -210,7 +210,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
         return JSONResponse(
             content={
                 "status": "success",
-                "message": f"成功加载文件【{dataset.original_filename}】！包含 {dataset.row_count} 行，{len(dataset.columns)} 列。",
+                "message": f"File loaded successfully【{dataset.original_filename}！包含 {dataset.row_count} 行，{len(dataset.columns)} 列。",
                 "dataset_id": dataset.dataset_id,
                 "original_filename": dataset.original_filename,
                 "preview": dataset.preview,
@@ -237,7 +237,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
         logger.exception("Unexpected upload failure")
         if stored_path.exists():
             stored_path.unlink(missing_ok=True)
-        raise AppError("internal_error", "File upload failed，请稍后重试。", 500) from exc
+        raise AppError("internal_error", "File upload failed. Please try again later.", 500) from exc
     finally:
         await file.close()
 
@@ -262,9 +262,9 @@ async def chat_stream(request: Request):
     try:
         payload = await request.json()
     except Exception as exc:
-        raise AppError("validation_error", "请求参数不合法，请检查后重试。", 422) from exc
+        raise AppError("validation_error", "Invalid request parameters. Please check and try again.", 422) from exc
     if not isinstance(payload, dict):
-        raise AppError("validation_error", "请求参数不合法，请检查后重试。", 422)
+        raise AppError("validation_error", "Invalid request parameters. Please check and try again.", 422)
     return await create_chat_stream_response(request, payload, graph=graph)
 
 
@@ -272,7 +272,7 @@ if IS_DEVELOPMENT:
     try:
         from langserve import add_routes
     except Exception:
-        logger.warning("langserve 未安装或导入失败，开发环境将跳过 /agent 路由注入。")
+        logger.warning("langserve Not installed or import failed，Development environment will skip /agent Route injection。")
     else:
         add_routes(
             app,

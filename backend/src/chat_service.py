@@ -159,7 +159,7 @@ def _build_follow_up_context_message(
 
     return {
         "type": "assistant",
-        "content": "最近一次结构化结果，供解释或跟进使用：\n" + json.dumps(summary, ensure_ascii=False),
+        "content": "Latest structured result for explanation or follow-up：\n" + json.dumps(summary, ensure_ascii=False),
     }
 
 
@@ -263,7 +263,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
         )
     if isinstance(exc, httpx.ConnectError):
         detail = _clean_exception_message(exc)
-        message = "上游模型连接失败，请检查网络或模型服务配置。"
+        message = "Upstream model connection failed. Check network or model service configuration."
         if detail:
             message = f"{message} 详情：{detail}"
         return AppError(
@@ -276,7 +276,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
     if isinstance(exc, httpx.HTTPStatusError):
         detail = _clean_exception_message(exc)
         status_code = exc.response.status_code if exc.response is not None else None
-        message = "上游模型服务返回异常状态。"
+        message = "Upstream model service returned an abnormal status."
         if isinstance(status_code, int):
             message = f"{message} HTTP {status_code}。"
         if detail:
@@ -290,7 +290,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
         )
     if isinstance(exc, httpx.RequestError):
         detail = _clean_exception_message(exc)
-        message = "上游模型请求失败，请检查网络连接后重试。"
+        message = "Upstream model request failed. Check network connection and try again."
         if detail:
             message = f"{message} 详情：{detail}"
         return AppError(
@@ -301,9 +301,9 @@ def _classify_stream_exception(exc: Exception) -> AppError:
             stage="model_stream",
         )
     detail = _clean_exception_message(exc)
-    message = "服务器内部错误，请稍后重试。"
+    message = "Internal server error. Please try again later."
     if detail:
-        message = f"模型调用失败：{detail}"
+        message = f"Model call failed: {detail}"
     return AppError(
         "internal_error",
         message,
@@ -347,7 +347,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     dataset_id = extract_dataset_id_from_payload(payload)
     messages = extract_messages(payload)
     if not messages:
-        raise AppError("validation_error", "请求参数不合法，请先输入问题。", 422, stage="validation")
+        raise AppError("validation_error", "Invalid request parameters. Please enter a question first.", 422, stage="validation")
 
     latest_user_message = extract_latest_user_message(messages)
     prior_analysis_active = has_prior_analysis_context(messages)
@@ -366,7 +366,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         if dataset_required_decision.matched:
             raise AppError(
                 "dataset_required",
-                "当前未选择数据集，请先上传 CSV 文件后再进行数据分析。",
+                "No dataset selected. Please upload a CSV file first.",
                 400,
                 stage="validation",
             )
@@ -396,7 +396,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
 
     compressed = compress_conversation_messages(messages, dataset_id=dataset_id)
     if not compressed.messages_for_model:
-        raise AppError("history_compression_error", "会话历史压缩失败，请重新发起请求。", 422, stage="history_compression")
+        raise AppError("history_compression_error", "Conversation history compression failed. Please send a new request.", 422, stage="history_compression")
 
     routing_context = RoutingContext(
         message=latest_user_message,

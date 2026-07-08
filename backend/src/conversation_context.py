@@ -36,7 +36,7 @@ def _looks_like_user_goal(message: str) -> bool:
             "预测",
             "训练",
             "explain",
-            "为什么",
+            "why",
         )
     )
 
@@ -103,8 +103,8 @@ def _looks_like_metric_or_target(message: str) -> bool:
             "auc",
             "f1",
             "回归",
-            "逻辑回归",
-            "线性回归",
+            "logistic regression",
+            "linear regression",
             "plot",
             "chart",
             "图",

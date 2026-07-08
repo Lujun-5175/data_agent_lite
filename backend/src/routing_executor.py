@@ -125,7 +125,7 @@ def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[s
     warning_lines = [str(item) for item in warnings[:3] if item]
 
     lines = [
-        "这份数据集已经加载好了，我先帮你快速讲解一下：",
+        "This dataset has been loaded，Let me give you a quick overview：",
         "",
         f"- 文件名：{getattr(dataset, 'original_filename', 'uploaded.csv')}",
         f"- 数据规模：{getattr(dataset, 'row_count', 0):,} 行 × {getattr(dataset, 'column_count', 0):,} 列",
@@ -134,9 +134,9 @@ def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[s
         f"- 分类/日期字段：{_format_column_list(categorical_columns)}",
     ]
     if warning_lines:
-        lines.extend(["", "我也注意到几个数据质量/字段类型提示："])
+        lines.extend(["", "I also noticed a few data quality/Field type hints："])
         lines.extend(f"- {warning}" for warning in warning_lines)
-    lines.extend(["", "你可以直接点上方推荐问题，或者从这些方向开始："])
+    lines.extend(["", "You can click the suggested questions above，or start from these directions："])
     lines.extend(f"- {question}" for question in recommended_prompts)
     return "\n".join(lines)
 
@@ -170,11 +170,11 @@ async def generate_dataset_overview_reply(
     messages = [
         SystemMessage(
             content=(
-                "你是 Data Agent 的数据集概览助手。"
-                "请基于给定的结构化上下文，用中文写一段简洁、自然、可信的数据集讲解。"
-                "必须覆盖：数据规模、字段大类、值得注意的 warning、建议从哪些问题开始。"
-                "不要编造任何未出现在输入中的统计值。"
-                "输出纯文本，不要输出 JSON。"
+                "你是 Data Agent 's dataset overview assistant。"
+                "Based on the given structured context, write a concise、自然、trustworthy dataset overview。"
+                "Must cover: data size, field categories, notable warnings, suggestions on where to start."
+                "Do not fabricate any statistics not present in the input。"
+                "Output plain text, not JSON."
             )
         ),
         HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
@@ -198,14 +198,14 @@ async def generate_dataset_direct_reply(
 ) -> str:
     dataset_summary = _format_dataset_context_summary(get_data_context_summary(dataset_id))
     helper_message = (
-        "当前用户问题更适合直接回答。请仅在必要时引用下面的数据集摘要，不要虚构未给出的统计值。\n"
+        "The current question is better suited for direct answering。Only reference the dataset summary below when necessary，Do not fabricate statistics that were not provided。\n"
         if not clarification
-        else "当前信息不足以安全执行数据分析。请基于下面的数据集摘要，用中文明确指出缺失信息，并提出最小可行澄清问题。\n"
+        else "Current information is insufficient to safely perform data analysis。Based on the dataset summary below，Clearly state what information is missing，and suggest minimal viable clarifying questions。\n"
     )
     contextual_messages = [
         {
             "type": "assistant",
-            "content": helper_message + "\n数据集摘要：\n" + dataset_summary,
+            "content": helper_message + "\nDataset Summary:\n" + dataset_summary,
         },
         *messages,
     ]
@@ -359,7 +359,7 @@ def _raise_tool_error(payload: dict[str, Any]) -> None:
         return
     raise AppError(
         error_code,
-        str(message or "工具执行失败，请稍后重试。"),
+        str(message or "Tool execution failed. Please try again later."),
         500,
         retryable=bool(retryable) if isinstance(retryable, bool) else False,
         stage=str(stage) if isinstance(stage, str) and stage.strip() else "tool_execution",
@@ -370,21 +370,21 @@ def _check_loop_guard(loop_guard: LoopGuardState) -> None:
     if loop_guard.total_steps > SETTINGS.agent_max_total_steps:
         raise AppError(
             "agent_recursion_limit",
-            "任务过于复杂，执行步骤已达到上限。请拆成更具体的子问题后重试。",
+            "Task is too complex，Execution steps have reached the limit。Please break it down into more specific sub-questions。",
             500,
             stage="agent_loop",
         )
     if loop_guard.repeated_tool_steps > SETTINGS.agent_max_same_tool_steps:
         raise AppError(
             "agent_recursion_limit",
-            "同一分析工具被重复调用过多次，系统已停止本次循环。请缩小范围后重试。",
+            "The same analysis tool has been called too many times. System has stopped this loop. Please narrow scope and retry.",
             500,
             stage="agent_loop",
         )
     if loop_guard.no_progress_steps > SETTINGS.agent_max_no_progress_steps:
         raise AppError(
             "agent_recursion_limit",
-            "任务连续多步没有产生有效进展，系统已主动停止。请改成更具体的问题后重试。",
+            "Multiple consecutive steps without effective progress. System has stopped. Please rephrase with a more specific question.",
             500,
             stage="agent_loop",
         )
@@ -394,7 +394,7 @@ def _validate_stream_outcome(requirements: Any, outcome: StreamOutcome) -> None:
     if requirements.explicit_ml_request and not outcome.saw_ml_tool_call:
         raise AppError(
             "structured_failure",
-            "本次建模请求没有调用直接的 ml 工具，请先通过 ml_execute 完成建模。",
+            "This modeling request did not call a direct ml tool. Please use ml_execute to complete modeling first.",
             200,
             stage="validation",
         )
@@ -403,14 +403,14 @@ def _validate_stream_outcome(requirements: Any, outcome: StreamOutcome) -> None:
         if missing_ml_artifacts:
             raise AppError(
                 "structured_failure",
-                f"本次建模请求缺少结构化结果：{', '.join(sorted(missing_ml_artifacts))}。",
+                f"This modeling request is missing structured results: {', '.join(sorted(missing_ml_artifacts))}。",
                 200,
                 stage="validation",
             )
     if requirements.chart_requested and not outcome.saw_chart_image:
         raise AppError(
             "structured_failure",
-            "本次图表请求没有成功生成可展示的图片结果，请检查字段名或图表描述后重试。",
+            "This chart request did not generate a displayable image. Please check field names or chart description and retry.",
             200,
             stage="validation",
         )
@@ -698,7 +698,7 @@ def execute_chat_stream_response(
                     if verification.status != "success":
                         raise AppError(
                             "task_plan_incomplete",
-                            verification.reason or "结构化计划未完整执行。",
+                            verification.reason or "Structured plan was not fully executed.",
                             200,
                             stage="plan_verification",
                         )

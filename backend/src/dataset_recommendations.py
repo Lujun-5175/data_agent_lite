@@ -57,11 +57,11 @@ def _generate_prompts_with_model(
     messages = [
         SystemMessage(
             content=(
-                "你是 Data Agent 的推荐问题生成器。"
-                "请基于给定数据集摘要和 schema profile，生成 3 个简洁、可执行、彼此不同的问题。"
-                "问题必须面向当前数据集，优先覆盖趋势、分组比较、关系/检验/建模中的高价值入口。"
-                "若数据不适合建模，请不要强行给建模问题。"
-                "只输出 JSON，格式为 {\"recommended_prompts\": [\"...\", \"...\", \"...\"]}。"
+                "你是 Data Agent recommended question generator。"
+                "Based on the given dataset summary and  schema profile，生成 3  concise、可执行、distinct questions。"
+                "Questions must target the current dataset，Prioritize covering trends、分组比较、关系/检验/High-value entry points for modeling。"
+                "If the data is not suitable for modeling，Do not force modeling questions。"
+                "Output only  JSON，Format:  {\"recommended_prompts\": [\"...\", \"...\", \"...\"]}。"
             )
         ),
         HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
@@ -106,33 +106,33 @@ def build_fallback_recommended_prompts(
 
     prompts: list[str] = []
     if datetime_columns and numeric_columns:
-        prompts.append(f"请按 {datetime_columns[0]} 聚合，分析 {numeric_columns[0]} 的趋势，并画一张折线图。")
+        prompts.append(f"请Group by {datetime_columns[0]} 聚合，分析 {numeric_columns[0]}  trends，and draw a line chart。")
     if categorical_columns and numeric_columns:
-        prompts.append(f"按 {categorical_columns[0]} 分组比较 {numeric_columns[0]} 的差异，并给出结论。")
+        prompts.append(f"Group by {categorical_columns[0]}, compare {numeric_columns[0]} differences and give conclusions.")
     if len(numeric_columns) >= 2:
-        prompts.append(f"{numeric_columns[0]} 和 {numeric_columns[1]} 的相关性是多少？")
+        prompts.append(f"{numeric_columns[0]} and {numeric_columns[1]} correlation?")
 
     for target_column in target_candidates[:1]:
         if target_column in numeric_columns:
             feature_candidates = [column for column in numeric_columns if column != target_column]
             if feature_candidates:
                 prompts.append(
-                    f"用 {', '.join(feature_candidates[:2])} 预测 {target_column}，跑一个线性回归并汇报指标。"
+                    f"用 {', '.join(feature_candidates[:2])} to predict {target_column}, run linear regression and report metrics."
                 )
                 break
         else:
             feature_candidates = [column for column in [*numeric_columns, *categorical_columns] if column != target_column]
             if feature_candidates:
                 prompts.append(
-                    f"用 {', '.join(feature_candidates[:3])} 预测 {target_column}，尝试一个 baseline 分类模型并汇报指标。"
+                    f"用 {', '.join(feature_candidates[:3])} to predict {target_column}, try a baseline classification model and report metrics."
                 )
                 break
 
     prompts.extend(
         [
-            "请先做一份描述性统计，并指出最值得关注的字段。",
-            "按一个关键分类字段分组，比较主要指标差异。",
-            "哪些字段最适合继续做相关性、检验或建模分析？",
+            "Run descriptive statistics and highlight the most notable fields.",
+            "Group by a key categorical field and compare major metric differences.",
+            "Which fields are best for correlation, testing, or modeling?",
         ]
     )
     return _normalize_prompt_list(prompts)
