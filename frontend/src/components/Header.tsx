@@ -18,7 +18,7 @@ export function Header({ onChatClear }: HeaderProps) {
             <div className="truncate text-[15px] font-semibold tracking-tight text-slate-900">Data Agent</div>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
               <CircleDot className="h-3 w-3 fill-emerald-500 text-emerald-500" />
-              <span>单栏数据分析聊天</span>
+              <span>AI-Powered Data Analysis</span>
             </div>
           </div>
         </div>
@@ -29,7 +29,7 @@ export function Header({ onChatClear }: HeaderProps) {
           size="sm"
           className="h-8 rounded-[12px] border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-none hover:bg-slate-50"
         >
-          清除对话
+          New Chat
         </Button>
       </div>
     </header>

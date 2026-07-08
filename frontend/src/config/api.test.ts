@@ -37,12 +37,12 @@ describe('api config', () => {
   it('maps known backend error codes', async () => {
     const { getFriendlyErrorMessage } = await import('./api');
     expect(getFriendlyErrorMessage('file_too_large', 'fallback')).toContain('50MB');
-    expect(getFriendlyErrorMessage('agent_recursion_limit', 'fallback')).toContain('拆得更具体');
-    expect(getFriendlyErrorMessage('internal_error', '模型调用失败：quota exceeded')).toBe(
-      '模型调用失败：quota exceeded'
+    expect(getFriendlyErrorMessage('agent_recursion_limit', 'fallback')).toContain('too complex');
+    expect(getFriendlyErrorMessage('internal_error', 'Model call failed: quota exceeded')).toBe(
+      'Model call failed: quota exceeded'
     );
-    expect(getFriendlyErrorMessage('upstream_model_connection_error', '连接失败：connection refused')).toBe(
-      '连接失败：connection refused'
+    expect(getFriendlyErrorMessage('upstream_model_connection_error', 'Connection failed: connection refused')).toBe(
+      'Connection failed: connection refused'
     );
     expect(getFriendlyErrorMessage(undefined, 'fallback')).toBe('fallback');
   });

@@ -18,7 +18,7 @@ export function SuggestedPrompts({
 
   return (
     <div className="rounded-[18px] border border-slate-200/80 bg-white/78 p-3 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">推荐问题</div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Suggested Questions</div>
       <div className="flex flex-wrap gap-2">
         {prompts.map((prompt) => (
           <button
@@ -52,11 +52,11 @@ export function SampleDataPanel({
       <div>
         <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <FileSpreadsheet className="h-3.5 w-3.5" />
-          示例数据一键试用
+          Quick Start Samples
         </div>
-        <h2 className="mt-3 text-lg font-semibold tracking-tight text-slate-950 md:text-xl">选择一个示例数据集，立即开始体验</h2>
+        <h2 className="mt-3 text-lg font-semibold tracking-tight text-slate-950 md:text-xl">Choose a sample dataset and start exploring</h2>
         <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-          不需要准备 CSV，点击加载后即可测试数据预览、统计分析、图表生成和建模流程。
+          No CSV needed. Load any sample to instantly test data preview, statistical analysis, chart generation, and modeling pipelines.
         </p>
       </div>
 
@@ -78,7 +78,7 @@ export function SampleDataPanel({
                 </div>
               </div>
               <div className="mt-4 rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
-                {sample.columnCount} 列 x {sample.rowCount.toLocaleString()} 行
+                {sample.columnCount} cols × {sample.rowCount.toLocaleString()} rows
               </div>
               <button
                 type="button"
@@ -86,7 +86,7 @@ export function SampleDataPanel({
                 disabled={disabled || isLoading}
                 className="mt-4 flex min-h-11 w-full items-center justify-center rounded-[14px] border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_6px_16px_rgba(15,23,42,0.08)] transition-colors hover:border-slate-900 hover:bg-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
               >
-                {isLoading ? '加载中...' : '加载'}
+                {isLoading ? 'Loading...' : 'Load'}
               </button>
             </article>
           );
@@ -137,72 +137,72 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
             </button>
             {showRouteInfo && (
               <div className="mt-2 rounded-[14px] border border-slate-200 bg-slate-50/65 px-3 py-3 text-xs leading-6 text-slate-600">
-                <div>主模式：{message.routeInfo.primaryMode || '未提供'}</div>
-                <div className="mt-1">实际分支：{message.routeInfo.finalBranch || '未提供'}</div>
-                <div className="mt-1">歧义标记：{message.routeInfo.ambiguityFlags.length > 0 ? message.routeInfo.ambiguityFlags.join(', ') : '无'}</div>
-                <div className="mt-1">兼容冲突标记：{message.routeInfo.conflictFlags.length > 0 ? message.routeInfo.conflictFlags.join(', ') : '无'}</div>
-                <div className="mt-1">请求能力：{message.routeInfo.requestedCapabilities.length > 0 ? message.routeInfo.requestedCapabilities.join(', ') : '无'}</div>
+                <div>Primary Mode: {message.routeInfo.primaryMode || 'N/A'}</div>
+                <div className="mt-1">Final Branch: {message.routeInfo.finalBranch || 'N/A'}</div>
+                <div className="mt-1">Ambiguity Flags: {message.routeInfo.ambiguityFlags.length > 0 ? message.routeInfo.ambiguityFlags.join(', ') : 'None'}</div>
+                <div className="mt-1">Conflict Flags: {message.routeInfo.conflictFlags.length > 0 ? message.routeInfo.conflictFlags.join(', ') : 'None'}</div>
+                <div className="mt-1">Requested Capabilities: {message.routeInfo.requestedCapabilities.length > 0 ? message.routeInfo.requestedCapabilities.join(', ') : 'None'}</div>
                 <div className="mt-1">
-                  能力判断：
+                  Capability Assessment:
                   {[
-                    message.routeInfo.requiresMl ? '需要建模' : null,
-                    message.routeInfo.requiresChart ? '需要图表' : null,
-                    message.routeInfo.requiresPythonAnalysis ? '需要分析' : null,
-                    message.routeInfo.isFollowUp ? '续问复用' : null,
+                    message.routeInfo.requiresMl ? 'ML Required' : null,
+                    message.routeInfo.requiresChart ? 'Chart Required' : null,
+                    message.routeInfo.requiresPythonAnalysis ? 'Analysis Required' : null,
+                    message.routeInfo.isFollowUp ? 'Follow-up' : null,
                   ]
                     .filter(Boolean)
-                    .join('、') || '常规回答'}
+                    .join(', ') || 'General Response'}
                 </div>
-                <div className="mt-1">Guardrail 动作：{message.routeInfo.guardrailActions.length > 0 ? message.routeInfo.guardrailActions.join(', ') : '无'}</div>
-                <div className="mt-1">回退原因：{message.routeInfo.fallbackReasons.length > 0 ? message.routeInfo.fallbackReasons.join(', ') : '无'}</div>
+                <div className="mt-1">Guardrail Actions: {message.routeInfo.guardrailActions.length > 0 ? message.routeInfo.guardrailActions.join(', ') : 'None'}</div>
+                <div className="mt-1">Fallback Reasons: {message.routeInfo.fallbackReasons.length > 0 ? message.routeInfo.fallbackReasons.join(', ') : 'None'}</div>
                 <div className="mt-2 border-t border-slate-200/80 pt-2">
                   <div>
-                    统一计划状态：
+                    Unified Plan Status:
                     {message.routeInfo.taskPlanAvailable
-                      ? '已生成'
+                      ? 'Generated'
                       : message.routeInfo.taskPlanGenerationFailed
-                        ? '生成失败'
+                        ? 'Generation Failed'
                         : message.routeInfo.taskPlanAttempted
-                          ? '未生成'
-                          : '未尝试'}
+                          ? 'Not Generated'
+                          : 'Not Attempted'}
                   </div>
-                  <div className="mt-1">计划目标：{message.routeInfo.taskPlanGoal || '无'}</div>
+                  <div className="mt-1">Plan Goal: {message.routeInfo.taskPlanGoal || 'None'}</div>
                   <div className="mt-1">
-                    计划置信度：
+                    Plan Confidence:
                     {typeof message.routeInfo.taskPlanConfidence === 'number'
                       ? message.routeInfo.taskPlanConfidence.toFixed(2)
-                      : '未提供'}
+                      : 'N/A'}
                   </div>
                   <div className="mt-1">
-                    计划歧义：
-                    {message.routeInfo.taskPlanAmbiguityFlags.length > 0 ? message.routeInfo.taskPlanAmbiguityFlags.join(', ') : '无'}
+                    Plan Ambiguity:
+                    {message.routeInfo.taskPlanAmbiguityFlags.length > 0 ? message.routeInfo.taskPlanAmbiguityFlags.join(', ') : 'None'}
                   </div>
                   <div className="mt-1">
-                    计划假设：
-                    {message.routeInfo.taskPlanAssumptions.length > 0 ? message.routeInfo.taskPlanAssumptions.join('；') : '无'}
+                    Plan Assumptions:
+                    {message.routeInfo.taskPlanAssumptions.length > 0 ? message.routeInfo.taskPlanAssumptions.join('; ') : 'None'}
                   </div>
                   <div className="mt-1">
-                    任务列表：
+                    Tasks:
                     {message.routeInfo.taskPlanTasks.length > 0 ? (
                       <div className="mt-1 space-y-1">
                         {message.routeInfo.taskPlanTasks.map((task) => (
                           <div key={`${task.taskId}-${task.taskType}`} className="rounded border border-slate-200 bg-white/60 px-2 py-1">
                             <div>{task.taskId || 'task'} · {task.taskType || 'unknown'}</div>
-                            <div>{task.description || '无描述'}</div>
-                            <div>依赖：{task.dependsOn.length > 0 ? task.dependsOn.join(', ') : '无'}</div>
-                            <div>产物：{task.requiredOutputs.length > 0 ? task.requiredOutputs.join(', ') : '无'}</div>
+                            <div>{task.description || 'No description'}</div>
+                            <div>Depends on: {task.dependsOn.length > 0 ? task.dependsOn.join(', ') : 'None'}</div>
+                            <div>Outputs: {task.requiredOutputs.length > 0 ? task.requiredOutputs.join(', ') : 'None'}</div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      '无'
+                      'None'
                     )}
                   </div>
                   <div className="mt-2 border-t border-slate-200/80 pt-2">
-                    <div className="font-medium text-slate-700">调试信息</div>
+                    <div className="font-medium text-slate-700">Debug Info</div>
                     <div className="mt-1">
-                      旧路由步骤：
-                      {message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : '无'}
+                      Legacy Route:
+                      {message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : 'None'}
                     </div>
                   </div>
                 </div>
@@ -232,7 +232,7 @@ export function ImageCard({ message }: { message: ChatMessage }) {
         {message.imageUrl && (
           <img
             src={message.imageUrl}
-            alt={message.filename || '生成的图表'}
+            alt={message.filename || 'Generated chart'}
             className="max-h-[420px] w-full rounded-[14px] border border-slate-200 object-contain"
           />
         )}

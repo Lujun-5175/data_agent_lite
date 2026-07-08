@@ -53,9 +53,8 @@ export function DataPreviewCard({
   }, [panelMaxHeight]);
 
   const summary = isActive
-    ? '当前数据集已接入，后续分析与图表会基于 working_df。'
-    : '历史卡片用于回看，不会影响当前会话状态。';
-
+    ? 'Active dataset — analysis and charts use working_df.'
+    : 'Historical card — review only, does not affect the current session.';
   return (
     <div className="w-full max-w-[860px] rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)] md:p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -67,16 +66,16 @@ export function DataPreviewCard({
             <div className="flex flex-wrap items-center gap-2">
               <div className="truncate text-base font-semibold text-slate-900">{payload.filename}</div>
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                {isActive ? '当前数据' : '历史记录'}
+                {isActive ? 'Active' : 'History'}
               </span>
             </div>
             <div className="mt-2 flex flex-wrap gap-2 text-xs font-medium text-slate-700">
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{payload.rowCount} 行</span>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{payload.columnCount} 列</span>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">预览 {payload.previewCount} 行</span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{payload.rowCount} rows</span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">{payload.columnCount} cols</span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Preview: {payload.previewCount} rows</span>
             </div>
             <div className="mt-2 text-xs leading-6 text-slate-500">
-              {summary} 分析基于 <span className="font-semibold text-slate-700">{payload.analysisBasis}</span>。
+              {summary} Analysis based on <span className="font-semibold text-slate-700">{payload.analysisBasis}</span>.
             </div>
           </div>
         </div>
@@ -88,7 +87,7 @@ export function DataPreviewCard({
             variant="outline"
             className="h-9 rounded-[12px] border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50"
           >
-            {isExpanded ? '收起预览' : '展开预览'}
+            {isExpanded ? 'Collapse Preview' : 'Expand Preview'}
           </Button>
           {isActive ? (
             <>
@@ -100,7 +99,7 @@ export function DataPreviewCard({
                 className="h-9 rounded-[12px] border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50"
               >
                 <RefreshCcw className="mr-2 h-4 w-4" />
-                {isUploading ? '上传中...' : '更换文件'}
+                {isUploading ? 'Uploading...' : 'Replace File'}
               </Button>
               <Button
                 type="button"
@@ -110,12 +109,12 @@ export function DataPreviewCard({
                 className="h-9 rounded-[12px] border border-rose-200 bg-rose-50 px-3 text-rose-700 hover:bg-rose-100"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                {isDeleting ? '删除中...' : '删除文件'}
+                {isDeleting ? 'Deleting...' : 'Delete File'}
               </Button>
             </>
           ) : (
             <div className="flex items-center rounded-[12px] border border-slate-200 bg-slate-50 px-3 text-[11px] font-medium text-slate-500">
-              历史卡片仅用于查看，不执行删除
+              Historical card — view only, no delete action
             </div>
           )}
         </div>
@@ -134,7 +133,7 @@ export function DataPreviewCard({
       {payload.preprocessingLog.length > 0 && (
         <details className="mt-3 rounded-[14px] border border-slate-200 bg-slate-50">
           <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-medium text-slate-800">
-            预处理日志
+            Preprocessing Log
           </summary>
           <div className="border-t border-slate-200 px-4 py-3 text-sm leading-6 text-slate-600">
             <ul className="space-y-1">
@@ -201,11 +200,11 @@ function ResizablePreviewPanel({
       <div className="flex h-full flex-col">
         <div className="shrink-0 border-b border-slate-200 bg-slate-50/80 px-4 py-2.5">
           <div className="flex items-center justify-between gap-3 text-[11px] font-medium text-slate-500">
-            <span>数据预览</span>
-            <span>{rows.length > 0 ? `显示 ${rows.length} 行` : '暂无预览行'}</span>
+            <span>Data Preview</span>
+            <span>{rows.length > 0 ? `${rows.length} rows shown` : 'No preview data'}</span>
           </div>
           <p className="mt-1 text-[11px] leading-5 text-slate-500">
-            这个容器只负责表格内部滚动，拖拽下面的把手可以调整高度，不会把聊天区整体撑开。
+            Scroll within the table. Drag the handle below to resize — won't expand the chat area.
           </p>
         </div>
 
@@ -221,7 +220,7 @@ function ResizablePreviewPanel({
                     <div className="flex items-center gap-2">
                       <span className="truncate">{column.name}</span>
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                        {column.type === 'numerical' ? '数值' : '分类'}
+                        {column.type === 'numerical' ? 'Numerical' : 'Categorical'}
                       </span>
                     </div>
                   </th>
@@ -249,7 +248,7 @@ function ResizablePreviewPanel({
           type="button"
           onPointerDown={handlePointerDown}
           className="flex h-5 shrink-0 items-center justify-center border-t border-slate-200 bg-slate-50 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 touch-none"
-          aria-label="拖拽调整预览高度"
+          aria-label="Drag to resize preview"
         >
           <GripVertical className="h-3.5 w-3.5" />
         </button>

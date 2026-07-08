@@ -269,26 +269,26 @@ export const columnInfo = {
 export const mockAnalysisResults = {
   'gender_Churn': {
     correlation: 0.15,
-    conclusion: '性别对流失有轻微影响'
+    conclusion: 'Gender has a slight impact on churn'
   },
   'tenure_MonthlyCharges': {
     correlation: -0.42,
-    conclusion: '资历越长，月费用略低'
+    conclusion: 'Longer tenure correlates with slightly lower monthly charges'
   },
   'Contract_TotalCharges': {
     correlation: 0.68,
-    conclusion: '合同类型与总费用有较强相关性'
+    conclusion: 'Contract type is strongly correlated with total charges'
   },
   'InternetService_MonthlyCharges': {
     correlation: 0.73,
-    conclusion: '网络服务类型显著影响月费用'
+    conclusion: 'Internet service type significantly impacts monthly charges'
   },
   'tenure_TotalCharges': {
     correlation: 0.82,
-    conclusion: '资历与总费用呈强正相关'
+    conclusion: 'Tenure and total charges have a strong positive correlation'
   },
   'gender_MonthlyCharges': {
     correlation: 0.08,
-    conclusion: '性别与月费用相关性较弱'
+    conclusion: 'Gender has a weak correlation with monthly charges'
   }
 };

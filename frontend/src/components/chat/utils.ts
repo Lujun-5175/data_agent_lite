@@ -26,7 +26,7 @@ export function formatCellValue(value: unknown) {
 
 export function normalizeUploadedDataset(result: ServerUploadResponse, fallbackFilename: string): UploadedDataset {
   const datasetId = (result.dataset_id ?? '').trim();
-  if (!datasetId) throw new Error('后端未返回 dataset_id。');
+  if (!datasetId) throw new Error('Backend did not return a dataset_id.');
   return {
     datasetId,
     filename: result.original_filename ?? result.filename ?? fallbackFilename,
@@ -127,32 +127,32 @@ export function normalizeRouteInfo(payload: Record<string, unknown>): RouteInfo 
 
 export function summarizeRouteInfo(routeInfo: RouteInfo) {
   const primaryModeLabelMap: Record<string, string> = {
-    direct_answer: '直接回答',
-    dataset_overview: '数据概览',
-    analysis: '分析',
-    visualization: '可视化',
-    modeling: '建模',
-    artifact_followup: '结果续问',
-    mixed: '混合流程',
-    clarification: '澄清问题',
+    direct_answer: 'Direct Answer',
+    dataset_overview: 'Dataset Overview',
+    analysis: 'Analysis',
+    visualization: 'Visualization',
+    modeling: 'Modeling',
+    artifact_followup: 'Follow-up',
+    mixed: 'Mixed',
+    clarification: 'Clarification',
   };
   const intentLabelMap: Record<string, string> = {
-    analysis: '分析',
-    ml: '建模',
-    chart: '图表',
-    mixed: '混合',
-    followup: '续问',
-    dataset_overview: '概览',
+    analysis: 'Analysis',
+    ml: 'Modeling',
+    chart: 'Chart',
+    mixed: 'Mixed',
+    followup: 'Follow-up',
+    dataset_overview: 'Overview',
   };
   const confidenceLabelMap: Record<string, string> = {
-    low: '低置信度',
-    medium: '中置信度',
-    high: '高置信度',
+    low: 'Low Confidence',
+    medium: 'Medium Confidence',
+    high: 'High Confidence',
   };
   const routeSourceLabelMap: Record<string, string> = {
-    llm_primary: 'LLM 主判定',
+    llm_primary: 'LLM Primary',
     llm_with_guardrail: 'LLM + Guardrail',
-    heuristic_fallback: '规则回退',
+    heuristic_fallback: 'Heuristic Fallback',
   };
   const intentLabel = intentLabelMap[routeInfo.intentType] ?? routeInfo.intentType;
   const confidenceLabel = confidenceLabelMap[routeInfo.confidence] ?? routeInfo.confidence;

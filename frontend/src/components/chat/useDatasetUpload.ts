@@ -37,7 +37,7 @@ export function useDatasetUpload({
 
   const handleFileSelect = async (file: File, options?: { sample?: SampleDataset }) => {
     if (!file.name.toLowerCase().endsWith('.csv')) {
-      const message = '请上传 CSV 格式的文件';
+      const message = 'Please upload a CSV file.';
       toast.error(message);
       appendMessage({ id: `error-${Date.now()}`, type: 'assistant', kind: 'error', content: message, timestamp: new Date() });
       return;
@@ -59,7 +59,7 @@ export function useDatasetUpload({
         return;
       }
       if (!response.ok) {
-        const { code, message } = await readApiErrorInfo(response, '文件上传失败，请检查后端服务是否正常运行');
+        const { code, message } = await readApiErrorInfo(response, 'File upload failed. Is the backend server running?');
         throw new Error(getFriendlyErrorMessage(code, message));
       }
 
@@ -71,13 +71,13 @@ export function useDatasetUpload({
       setUploadedDataset(dataset);
       setSuggestedPrompts(dataset.recommendedPrompts);
       replaceDatasetCard(dataset);
-      toast.success(options?.sample ? `示例数据已加载：${options.sample.name}` : result.message || `成功加载文件【${dataset.filename}】`);
+      toast.success(options?.sample ? `Sample loaded: ${options.sample.name}` : result.message || `Loaded: ${dataset.filename}`);
       resetFileInput();
     } catch (error) {
       if (uploadController.signal.aborted || lifecycleGeneration !== lifecycleGenerationRef.current || uploadRequestId !== uploadRequestIdRef.current) {
         return;
       }
-      const message = error instanceof Error ? error.message : '文件上传失败，请检查后端服务是否正常运行';
+      const message = error instanceof Error ? error.message : 'File upload failed. Is the backend server running?';
       appendMessage({ id: `error-${Date.now()}`, type: 'assistant', kind: 'error', content: message, timestamp: new Date() });
       toast.error(message);
     } finally {
@@ -106,7 +106,7 @@ export function useDatasetUpload({
         return;
       }
       if (!response.ok) {
-        throw new Error(`示例数据加载失败：${sample.filename}`);
+        throw new Error(`Failed to load sample: ${sample.filename}`);
       }
       const csvBlob = await response.blob();
       if (sampleRequestId !== sampleRequestIdRef.current || lifecycleGeneration !== lifecycleGenerationRef.current) {
@@ -118,7 +118,7 @@ export function useDatasetUpload({
       if (sampleController.signal.aborted || lifecycleGeneration !== lifecycleGenerationRef.current || sampleRequestId !== sampleRequestIdRef.current) {
         return;
       }
-      const message = error instanceof Error ? error.message : '示例数据加载失败';
+      const message = error instanceof Error ? error.message : 'Failed to load sample data';
       appendMessage({ id: `error-${Date.now()}`, type: 'assistant', kind: 'error', content: message, timestamp: new Date() });
       toast.error(message);
     } finally {
@@ -139,7 +139,7 @@ export function useDatasetUpload({
     try {
       const response = await fetch(API_ENDPOINTS.DELETE_DATASET(targetDatasetId), { method: 'DELETE' });
       if (!response.ok) {
-        const { code, message } = await readApiErrorInfo(response, '删除数据集失败，请稍后重试');
+        const { code, message } = await readApiErrorInfo(response, 'Failed to delete dataset. Please try again.');
         throw new Error(getFriendlyErrorMessage(code, message));
       }
       setUploadedDataset(null);
@@ -149,12 +149,12 @@ export function useDatasetUpload({
         id: `status-${Date.now()}`,
         type: 'assistant',
         kind: 'status',
-        content: '当前数据集已移除，你可以继续聊天或重新上传文件。',
+        content: 'Dataset removed. You can continue chatting or upload a new file.',
         timestamp: new Date(),
       });
-      toast.success('数据集已删除');
+      toast.success('Dataset deleted');
     } catch (error) {
-      const message = error instanceof Error ? error.message : '删除数据集失败，请稍后重试';
+      const message = error instanceof Error ? error.message : 'Failed to delete dataset. Please try again.';
       appendMessage({ id: `error-${Date.now()}`, type: 'assistant', kind: 'error', content: message, timestamp: new Date() });
       toast.error(message);
     } finally {

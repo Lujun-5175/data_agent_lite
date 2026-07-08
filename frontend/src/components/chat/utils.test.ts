@@ -107,6 +107,6 @@ describe('chat utils', () => {
     expect(routeInfo?.taskPlanTasks[0]?.taskType).toBe('group_aggregate');
     expect(routeInfo?.taskPlanAttempted).toBe(true);
     expect(routeInfo?.taskPlanGenerationFailed).toBe(false);
-    expect(summarizeRouteInfo(routeInfo!)).toContain('数据概览');
+    expect(summarizeRouteInfo(routeInfo!)).toContain('Dataset Overview');
   });
 });

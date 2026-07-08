@@ -105,7 +105,7 @@ export function useChatStream({
         return;
       }
       if (!response.ok) {
-        const { code, message, requestId } = await readApiErrorInfo(response, '调用AI助手失败');
+        const { code, message, requestId } = await readApiErrorInfo(response, 'Failed to call AI assistant');
         if (requestId) {
           console.error('chat request failed', { code, requestId });
         }
@@ -155,13 +155,13 @@ export function useChatStream({
 
             if (event.eventType === 'tool_start') {
               if (isStaleRequest(requestGeneration)) return;
-              upsertStatusMessage(assistantMessageId, '正在生成分析结果…');
+              upsertStatusMessage(assistantMessageId, 'Generating analysis…');
               continue;
             }
 
             if (event.eventType === 'tool_end') {
               if (isStaleRequest(requestGeneration)) return;
-              upsertStatusMessage(assistantMessageId, '分析已完成');
+              upsertStatusMessage(assistantMessageId, 'Analysis complete');
               continue;
             }
 
@@ -173,13 +173,13 @@ export function useChatStream({
                   id: `${assistantMessageId}-image-${Date.now()}`,
                   type: 'assistant',
                   kind: 'image',
-                  content: isNonEmptyString(event.payload.filename) ? `图表结果：${event.payload.filename}` : '图表结果',
+                  content: isNonEmptyString(event.payload.filename) ? `Chart: ${event.payload.filename}` : 'Chart result',
                   imageUrl,
                   filename: isNonEmptyString(event.payload.filename) ? event.payload.filename : undefined,
                   timestamp: new Date(),
                 });
               }
-              upsertStatusMessage(assistantMessageId, '图表结果已附在当前对话中');
+              upsertStatusMessage(assistantMessageId, 'Chart attached to conversation');
               continue;
             }
 
@@ -194,7 +194,7 @@ export function useChatStream({
               }
               const errorMessage = getFriendlyErrorMessage(
                 isNonEmptyString(event.payload.code) ? event.payload.code : undefined,
-                isNonEmptyString(event.payload.message) ? event.payload.message : '调用AI助手失败'
+                isNonEmptyString(event.payload.message) ? event.payload.message : 'Failed to call AI assistant'
               );
               throw new Error(errorMessage);
             }
@@ -213,13 +213,13 @@ export function useChatStream({
       const message =
         error instanceof Error
           ? error.message === 'Failed to fetch'
-            ? '后端服务连接失败，请确认线上后端已启动且 Vercel 已配置 BACKEND_URL。'
+              ? 'Failed to connect to the backend. Make sure your production server is running and BACKEND_URL is configured in Vercel.'
             : error.message
-          : '调用AI助手时出现错误';
+          : 'Error calling AI assistant'
 
       upsertMessage(assistantMessageId, (assistantMessage) => ({
         ...assistantMessage,
-        content: `抱歉，${message}`,
+        content: `Sorry, ${message}`,
         kind: 'error',
       }));
       toast.error(message);

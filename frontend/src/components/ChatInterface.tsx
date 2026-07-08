@@ -16,7 +16,7 @@ const initialMessages: ChatMessage[] = [
     id: '1',
     type: 'assistant',
     kind: 'text',
-    content: '你好，欢迎来到 Data Agent。你可以直接聊天，也可以在输入框左侧上传 CSV，让我帮你分析、预览和可视化。',
+    content: 'Welcome to Data Agent! You can chat directly, or upload a CSV from the left of the input box — I\'ll analyze, preview, and visualize it for you.',
     timestamp: new Date(),
   },
 ];
@@ -190,17 +190,17 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
         <div className={`${CHAT_SHELL_CLASS} space-y-3 py-3 md:py-4`}>
           <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-slate-200/60 bg-white/70 px-3 py-2 text-xs leading-none text-slate-600 shadow-[0_4px_16px_rgba(15,23,42,0.03)]">
             <span className="inline-flex h-7 items-center rounded-full border border-slate-200 bg-white px-2.5 font-medium text-slate-700">
-              当前模式：单栏聊天
+              Mode: Chat
             </span>
             {uploadedDataset ? (
               <>
                 <span className="inline-flex h-7 items-center rounded-full border border-slate-200 bg-white px-2.5 font-medium text-slate-700">
-                  当前数据：{uploadedDataset.filename}
+                  Data: {uploadedDataset.filename}
                 </span>
-                <span>分析基于 working_df，预处理日志已记录。</span>
+                <span>Analyzing on working_df — preprocessing log recorded.</span>
               </>
             ) : (
-              <span>当前未接入数据集，可直接聊天或上传 CSV 开始分析。</span>
+              <span>No dataset loaded — chat freely or upload a CSV to start analyzing.</span>
             )}
           </div>
 
@@ -221,7 +221,7 @@ export function ChatInterface({ clearTrigger }: ChatInterfaceProps) {
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="输入你的问题，或者先上传 CSV 文件..."
+                  placeholder="Ask anything, or upload a CSV to analyze..."
                   className="min-h-[52px] max-h-[160px] flex-1 resize-none rounded-[16px] border-0 bg-transparent px-3 py-3 text-[15px] font-medium text-slate-900 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0"
                   disabled={isLoading}
                 />
