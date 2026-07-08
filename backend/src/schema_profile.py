@@ -51,11 +51,11 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
         flags = _build_flags(semantic_type, unique_count=unique_count, non_null_count=non_null_count, column_name=str(column))
 
         if missing_ratio >= SETTINGS.profile_high_missing_ratio_threshold:
-            notes.append(f"缺失率较高（{missing_ratio:.1%}）。")
+            notes.append(f"High missing rate ({missing_ratio:.1%}). ")
             semantic_evidence.append("high_missing_ratio")
 
         if semantic_type == "categorical" and unique_ratio >= SETTINGS.profile_high_cardinality_ratio_threshold:
-            notes.append("分类列基数较高，后续建模需谨慎编码。")
+            notes.append("Categorical column has high cardinality. Use caution with encoding for modeling.")
             semantic_evidence.append("high_cardinality_categorical")
 
         entry = {
@@ -112,7 +112,7 @@ def _infer_semantic_type(
 ) -> str:
     lower_name = column_name.strip().lower()
     if non_null_count == 0:
-        notes.append("列全为空。")
+        notes.append("Column is entirely empty。")
         semantic_evidence.append("all_null")
         return "unknown"
 
@@ -126,7 +126,7 @@ def _infer_semantic_type(
 
     values = series.dropna().astype(str).str.strip()
     if values.empty:
-        notes.append("列全为空白字符串。")
+        notes.append("Column is entirely empty白字符串。")
         semantic_evidence.append("blank_string_only")
         return "unknown"
 
@@ -138,7 +138,7 @@ def _infer_semantic_type(
 
     datetime_ratio = _datetime_parse_ratio(values)
     if datetime_ratio >= SETTINGS.profile_datetime_parse_ratio_threshold:
-        notes.append(f"检测到日期时间模式（可解析比例 {datetime_ratio:.1%}）。")
+        notes.append(f"Date/time pattern detected（可解析比例 {datetime_ratio:.1%}). ")
         semantic_evidence.extend(["datetime_parse_ratio_high", f"datetime_ratio={datetime_ratio:.2f}"])
         return "datetime_like"
 
@@ -150,17 +150,17 @@ def _infer_semantic_type(
     is_identifier_name = any(hint in lower_name for hint in IDENTIFIER_NAME_HINTS)
 
     if any(hint in lower_name for hint in TEXT_NAME_HINTS):
-        notes.append("列名提示为文本描述字段。")
+        notes.append("Column name suggests text/description field。")
         semantic_evidence.append("text_name_hint")
         return "text_like"
 
     if avg_len >= SETTINGS.profile_text_avg_length_threshold and unique_ratio >= SETTINGS.profile_high_cardinality_ratio_threshold:
-        notes.append("文本长度较长且重复度低，疑似自由文本列。")
+        notes.append("Long text length with low repetition，Likely free-text column。")
         semantic_evidence.extend(["long_average_text", "high_unique_ratio"])
         return "text_like"
 
     if contains_space_ratio >= 0.45 and unique_ratio >= 0.35:
-        notes.append("值中大量包含空格且离散度较高，疑似自然语言文本。")
+        notes.append("Values contain many spaces with high dispersion，Likely free-text column。")
         semantic_evidence.extend(["contains_space_ratio_high", "moderate_to_high_unique_ratio"])
         return "text_like"
 
@@ -168,7 +168,7 @@ def _infer_semantic_type(
         unique_ratio >= SETTINGS.profile_identifier_unique_ratio_threshold
         and avg_len < SETTINGS.profile_text_avg_length_threshold
     ):
-        notes.append("高唯一性或编码形状明显，疑似标识符列。")
+        notes.append("High uniqueness or clear encoding pattern，Likely identifier column。")
         semantic_evidence.extend(["identifier_like_signal", f"code_like_ratio={code_like_ratio:.2f}"])
         return "identifier_like"
 

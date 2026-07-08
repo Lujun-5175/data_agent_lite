@@ -147,7 +147,7 @@ def _extract_routing_decision_from_value(value: object) -> dict[str, Any] | None
 
 def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
     if not routing_decision:
-        return "当前没有预先注入 routing_decision，请按最小必要步骤处理。"
+        return "No pre-injected routing_decision. Proceed with minimal necessary steps."
 
     primary_mode = str(routing_decision.get("primary_mode", "")).strip()
     requested_capabilities = {
@@ -157,34 +157,33 @@ def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
     }
 
     if primary_mode == "dataset_overview":
-        return "这是数据集概览请求。优先基于当前 schema/profile 直接讲解，不要进入多余的工具循环。"
+        return "This is a dataset overview request. Prefer explaining based on current schema/profile directly. Avoid unnecessary tool loops."
     if primary_mode == "modeling":
         return (
-            "这是明确建模请求。选择最小必要步骤，"
-            "只有在确实需要训练、评估或特征重要性时才调用 `ml_execute`。"
+            "This is a clear modeling request. Take minimal necessary steps. "
+            "Only call `ml_execute` when training, evaluation, or feature importance is actually needed."
         )
     if primary_mode == "mixed":
         return (
-            "这是混合工作流。先执行 analysis 部分，再判断是否需要 `ml_execute`。"
-            "不要把探索性分析直接升级成建模。"
+            "This is a mixed workflow. Execute the analysis part first, then decide if `ml_execute` is needed. "
+            "Do not escalate exploratory analysis into modeling."
         )
     if primary_mode == "visualization":
-        return "这是绘图请求。先做最小必要分析，再使用 `fig_inter` 生成图表。"
+        return "This is a visualization request. Do minimal analysis first, then use `fig_inter` to generate the chart."
     if primary_mode == "artifact_followup":
-        return "这是跟进/续问请求。优先复用最近结构化结果，必要时再补充分析或 ML。"
+        return "This is a follow-up request. Prefer reusing recent structured artifacts. Supplement with analysis or ML only if needed."
     if primary_mode == "clarification":
-        return "当前信息不足，优先澄清用户缺失的筛选范围、目标列或预期输出，不要直接进入复杂工具循环。"
+        return "Insufficient information. Prioritize clarifying the user's missing filters, target columns, or expected output. Do not enter complex tool loops directly."
     if primary_mode == "direct_answer":
-        return "这是无需复杂工具的直接回答请求。优先简洁作答，仅在确有必要时再进入分析流程。"
+        return "This is a direct answer request requiring no complex tools. Respond concisely. Only enter analytical workflow when truly necessary."
 
     if requested_capabilities.intersection({"stat_test", "group_analysis", "python_analysis"}):
-        return "检测到统计/探索性分析意图，优先使用 stats_execute 或 python_inter，避免不必要的建模。"
+        return "Statistical/exploratory intent detected. Prefer stats_execute or python_inter. Avoid unnecessary modeling."
 
     return (
-        "先根据 routing_decision 选择最小必要工具。"
-        "统计问题优先 stats_execute，探索性分析优先 python_inter，"
-        "明确建模请求才使用 `ml_execute`，绘图需求使用 `fig_inter`。"
-    )
+        "Select minimal necessary tools based on routing_decision. "
+        "Stats questions → stats_execute, exploratory analysis → python_inter, "
+        "clear modeling requests → `ml_execute`, visualization → `fig_inter`."
 
 
 model = ChatDeepSeek(
@@ -205,10 +204,10 @@ tools = [
 def _format_dataset_context_summary(summary: dict[str, Any]) -> str:
     def _format_columns(columns: list[str], limit: int) -> str:
         if not columns:
-            return "暂无"
+            return "None"
         visible = columns[:limit]
-        suffix = f" 等 {len(columns)} 列" if len(columns) > limit else ""
-        return "、".join(visible) + suffix
+        suffix = f" and {len(columns)} more columns" if len(columns) > limit else ""
+        return ", ".join(visible) + suffix
 
     numeric_columns = [
         str(column)
@@ -232,16 +231,16 @@ def _format_dataset_context_summary(summary: dict[str, Any]) -> str:
     ]
 
     return (
-        f"文件名: {summary.get('filename', 'uploaded.csv')}\n"
+        f"Filename: {summary.get('filename', 'uploaded.csv')}\n"
         f"dataset_id: {summary.get('dataset_id')}\n"
-        f"分析基于: {summary.get('analysis_basis', 'raw_df')}\n"
-        f"数据规模: {summary.get('row_count', 0)} 行 × {summary.get('column_count', 0)} 列\n"
-        f"数值字段({summary.get('numeric_column_count', 0)}): "
+        f"Analysis basis: {summary.get('analysis_basis', 'raw_df')}\n"
+        f"Shape: {summary.get('row_count', 0)} rows × {summary.get('column_count', 0)} cols\n"
+        f"Numeric fields ({summary.get('numeric_column_count', 0)}): "
         f"{_format_columns(numeric_columns, SETTINGS.chat_max_prompt_numeric_columns)}\n"
-        f"分类/日期字段({summary.get('categorical_column_count', 0)}): "
+        f"Categorical/date fields ({summary.get('categorical_column_count', 0)}): "
         f"{_format_columns(categorical_columns, SETTINGS.chat_max_prompt_categorical_columns)}\n"
-        f"预处理提示: {_format_columns(preprocessing_log, 3)}\n"
-        f"关键 warning: {_format_columns(warnings, 3)}"
+        f"Preprocessing: {_format_columns(preprocessing_log, 3)}\n"
+        f"Key warnings: {_format_columns(warnings, 3)}"
     )
 
 def get_dataset_required_decision(
@@ -335,11 +334,11 @@ def _build_general_chat_messages(messages: list[dict[str, Any]]) -> list[Any]:
     converted: list[Any] = [
         SystemMessage(
             content=(
-                "你是 Data Agent 的中文助手，目标是“准确、简洁、可执行”。"
-                "请默认使用中文，语气专业友好，不要编造不存在的数据、接口或结论。"
-                "如果用户问题属于普通聊天、概念解释、学习建议或通识问答，请直接回答。"
-                "如果用户明确要求“基于已上传数据”的分析，但当前没有可用数据集，请明确提示先上传 CSV 文件。"
-                "当信息不足以得出结论时，先说清缺失信息，再给最小可行下一步。"
+                "You are Data Agent, an AI data analysis assistant. Your goal: accurate, concise, actionable. "
+                "Default to English. Be professional and friendly. Never fabricate data, APIs, or conclusions. "
+                "If the user asks general chat, concept explanations, study advice, or common knowledge, answer directly. "
+                "If the user explicitly requests analysis based on uploaded data but no dataset is available, clearly ask them to upload a CSV first. "
+                "When information is insufficient to draw a conclusion, state what's missing and suggest the minimal next step. "
             )
         )
     ]
@@ -391,50 +390,50 @@ def dataset_context_middleware(request) -> str:
         if dataset_id:
             dataset = get_dataset(dataset_id)
             data_context = _format_dataset_context_summary(get_data_context_summary(dataset_id))
-            dataset_scope = f"当前数据集 dataset_id: {dataset_id}，分析基于 {dataset.analysis_basis}。"
+            dataset_scope = f"Active dataset dataset_id: {dataset_id}, analysis based on {dataset.analysis_basis}."
         else:
-            data_context = "当前未选择数据集。普通聊天可以继续进行；如果用户需要分析具体数据，请先上传 CSV 文件。"
-            dataset_scope = "当前没有可用数据集。普通聊天可直接回答，数据分析需先上传 CSV。"
+            data_context = "No dataset selected. General chat can proceed; if data analysis is needed, please upload a CSV first."
+            dataset_scope = "No active dataset. General chat can proceed directly. Data analysis requires uploading a CSV."
 
         route_hint = _build_route_hint(routing_decision)
         logger.debug("routing decision: %s", routing_decision)
 
-        return f"""你是 Data Agent 的高级数据分析助手。你的首要目标是：结果正确、过程可复核、表达清晰。
+        return f"""You are Data Agent, a senior data analysis assistant. Your primary goals: correct results, reviewable process, clear communication.
 
-【当前数据集状态】
+[Active Dataset]
 {dataset_scope}
 
-【数据集摘要】
+[Dataset Summary]
 {data_context}
 
-【你的职责】
-1. 对“基于数据的问题”优先调用工具：数据理解/预处理问题优先 `profile.*`，统计分析优先 `stats.*`，明确建模请求再用 `ml_execute`，图表需求用 `fig_inter`。
-2. 变量 `df` 是只读数据视图；`data`、`viz`、`stats`、`profile`、`ml` 是白名单 helper API。优先用 helper API，不要依赖未声明能力。
-   对于明确建模请求，先判断是否确实需要训练/评估模型再决定是否调用 `ml_execute`；不要把分析性请求误判成建模请求。
-   对于统计分析、过滤、聚合、比较、概览，请优先使用 `stats_execute`；只有需要更自由的探索性分析或绘图逻辑时，再使用 `python_inter`。
-3. 只能基于当前数据集和工具输出作答；禁止臆测缺失数据、禁止虚构计算结果。
-4. 分析时先完成计算再回答，不要只给思路。若结果为空或样本不足，要明确说明并给出可执行下一步。
-5. 绘图任务要给出简短结论（图展示了什么）并保持标题/轴含义清晰。
-6. 如果用户请求涉及不存在列、无效筛选或不受支持操作，请直接说明原因并给替代方案。
-7. 若用户询问“字段语义、可建模列、预处理步骤”，优先返回结构化 artifact 结果（如 schema_profile / preprocess_result / model_prep_plan）再给简要总结。
-8. baseline ML 仅支持逻辑回归/线性回归；不支持 AutoML、随机森林、XGBoost、SHAP。遇到越界请求请明确拒绝并给可执行替代。
-9. 若用户显式要求模型指标或特征重要性，应按需继续调用 `ml_execute`，并分别使用 `action="metrics"` / `action="feature_importance"`，复用最近的模型 artifact。
+[Your Responsibilities]
+1. For data-based questions, prioritize tools: data understanding/preprocessing -> `profile.*`, statistical analysis -> `stats.*`, clear modeling requests -> `ml_execute`, charts -> `fig_inter`.
+2. Variable `df` is a read-only data view; `data`, `viz`, `stats`, `profile`, `ml` are whitelisted helper APIs. Prefer helper APIs; do not rely on undeclared capabilities.
+   For clear modeling requests, first verify whether training/evaluation is truly needed before calling `ml_execute`. Do not mistake analytical requests for modeling requests.
+   For statistical analysis, filtering, aggregation, comparison, and overviews, prefer `stats_execute`. Only use `python_inter` for more flexible exploratory analysis or plotting logic.
+3. Answer only based on the current dataset and tool outputs. Never guess missing data or fabricate computed results.
+4. Complete calculations before answering. If results are empty or samples insufficient, state this clearly and provide actionable next steps.
+5. For charting tasks, provide a brief conclusion (what the chart shows) and keep titles/axis labels clear.
+6. If the request involves non-existent columns, invalid filters, or unsupported operations, explain why and offer alternatives.
+7. If the user asks about field semantics, modelable columns, or preprocessing steps, prioritize returning structured artifact results (e.g., schema_profile / preprocess_result / model_prep_plan) followed by a brief summary.
+8. Baseline ML only supports logistic regression / linear regression. AutoML, Random Forest, XGBoost, SHAP are not supported. For out-of-scope requests, clearly refuse and suggest alternatives.
+9. 若用户显式要求模型指标或特征重要性，应按需继续调用 `ml_execute`，并分别使用 `action="metrics"` / `action="feature_importance"`, reusing the latest model artifact.
 
-【输出风格】
-- 默认中文，先给结论，再给关键依据（核心数字/分组结果/趋势）。
-- 避免冗长，不重复用户问题，不输出无意义模板话术。
-- 若用户要求 Top N、筛选、分组、时间聚合，必须在回答中体现这些约束是否已正确执行。
+[Output Style]
+- Default to English. Lead with the conclusion, then provide key evidence (key numbers, group results, trends).
+- Be concise. Do not repeat the user question or output meaningless template phrases.
+- If the user requests Top N, filtering, grouping, or time aggregation, reflect whether these constraints were correctly applied.
 
-【多轮上下文规则】
-- 继承当前会话中的筛选范围与目标指标（如“现在只看 California”）。
-- 若跟进问题存在歧义，先用一句话确认你将沿用的口径，再给结果。
+[Multi-turn Context Rules]
+- Inherit filters and target metrics from the current session (e.g., "now looking at California only").
+- If a follow-up question is ambiguous, confirm the scope in one sentence before providing results.
 
-【当前路由提示】
+[Current Route Hint]
 - {route_hint}
 
-【无数据集时的规则】
-- 若用户是普通聊天：直接回答。
-- 若用户明确要做数据分析：提示先上传 CSV 文件后再分析。
+[Rules When No Dataset]
+- If it is general chat: answer directly.
+- If the user explicitly wants data analysis: prompt them to upload a CSV first.
 """
 
 

@@ -34,14 +34,14 @@ class DatasetError(AppError):
 class DatasetNotFoundError(DatasetError):
     """Raised when a dataset cannot be found."""
 
-    def __init__(self, message: str = "数据集不存在或已被删除。") -> None:
+    def __init__(self, message: str = "Dataset not found or has been deleted.") -> None:
         super().__init__("dataset_not_found", message, 404)
 
 
 class DatasetLoadError(DatasetError):
     """Raised when a CSV file cannot be loaded safely."""
 
-    def __init__(self, message: str = "CSV 文件读取失败，请检查文件内容是否正确。") -> None:
+    def __init__(self, message: str = "Failed to read CSV file. Please check the file content.") -> None:
         super().__init__("dataset_load_error", message, 400)
 
 
@@ -390,7 +390,7 @@ def load_csv_file(file_path: Path, original_filename: str) -> Dataset:
                 original_filename=original_filename,
                 stored_path=resolved_path,
                 encoding=encoding,
-                preprocessing_log=["上传阶段仅完成基础读取，analysis_df 尚未生成。"],
+                preprocessing_log=["Upload stage: basic read only, analysis_df not yet generated."],
             )
             return dataset
         except UnicodeDecodeError:

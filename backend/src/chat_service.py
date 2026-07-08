@@ -232,7 +232,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
     if isinstance(exc, GraphRecursionError):
         return AppError(
             "agent_recursion_limit",
-            "任务执行路径反复循环，已主动停止。请把问题拆成更具体的步骤后重试。",
+            "Task execution path looped repeatedly. System stopped. Please break your question into more specific steps.",
             500,
             retryable=False,
             stage="agent_loop",
@@ -240,7 +240,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
     if isinstance(exc, httpx.ReadTimeout):
         return AppError(
             "upstream_model_timeout",
-            "上游模型响应超时，请稍后重试。",
+            "Upstream model timed out. Please try again.",
             500,
             retryable=True,
             stage="model_stream",
@@ -248,7 +248,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
     if isinstance(exc, httpx.TimeoutException):
         return AppError(
             "upstream_model_timeout",
-            "上游模型响应超时，请稍后重试。",
+            "Upstream model timed out. Please try again.",
             500,
             retryable=True,
             stage="model_stream",
@@ -256,7 +256,7 @@ def _classify_stream_exception(exc: Exception) -> AppError:
     if isinstance(exc, httpx.ReadError):
         return AppError(
             "upstream_model_stream_error",
-            "上游模型流式响应中断，请稍后重试。",
+            "Upstream model stream was interrupted. Please try again.",
             500,
             retryable=True,
             stage="model_stream",

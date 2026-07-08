@@ -165,7 +165,7 @@ class ToolExecutionTimeoutError(SafeExecutionError):
     """Raised when constrained execution exceeds its adaptive timeout budget."""
 
     def __init__(self, seconds: float) -> None:
-        super().__init__(f"代码执行超时（>{seconds:.1f} 秒），请缩小范围、指定列或减少循环。")
+        super().__init__(f"Code execution timed out (> {seconds:.1f}s). Try narrowing scope, specifying columns, or reducing loops.")
         self.code = "tool_execution_timeout"
 
 
@@ -193,35 +193,35 @@ class SafeCodeValidator(ast.NodeVisitor):
     def visit(self, node: ast.AST) -> Any:
         self._ast_node_count += 1
         if self._ast_node_count > self.max_ast_nodes:
-            raise SafeExecutionError("代码过于复杂：AST 节点数超过限制。")
+            raise SafeExecutionError("Code too complex: AST node count exceeds limit.")
         return super().visit(node)
 
     def visit_Import(self, node: ast.Import) -> Any:
-        raise SafeExecutionError("不允许在执行代码中使用 import。")
+        raise SafeExecutionError("Import statements are not allowed in executed code.")
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
-        raise SafeExecutionError("不允许在执行代码中使用 from ... import ...。")
+        raise SafeExecutionError("From...import statements are not allowed in executed code.")
 
     def visit_Name(self, node: ast.Name) -> Any:
         if node.id.startswith("__"):
-            raise SafeExecutionError(f"不允许访问敏感名称: {node.id}")
+            raise SafeExecutionError(f"Access to forbidden name: {node.id}")
         if node.id in FORBIDDEN_IDENTIFIERS:
-            raise SafeExecutionError(f"不允许访问危险标识符: {node.id}")
+            raise SafeExecutionError(f"Access to dangerous identifier: {node.id}")
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> Any:
         self._check_call_chain_depth(node)
         if node.attr.startswith("_"):
-            raise SafeExecutionError(f"不允许访问敏感属性: {node.attr}")
+            raise SafeExecutionError(f"Access to sensitive attribute: {node.attr}")
         if node.attr in FORBIDDEN_METHOD_NAMES:
-            raise SafeExecutionError(f"不允许访问危险函数: {node.attr}")
+            raise SafeExecutionError(f"Access to dangerous function: {node.attr}")
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
         self._check_call_chain_depth(node)
         call_name = self._resolve_call_name(node.func)
         if call_name in FORBIDDEN_CALL_NAMES or call_name in FORBIDDEN_METHOD_NAMES:
-            raise SafeExecutionError(f"不允许调用危险函数: {call_name}")
+            raise SafeExecutionError(f"Call to dangerous function: {call_name}")
         self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> Any:
@@ -256,7 +256,7 @@ class SafeCodeValidator(ast.NodeVisitor):
         self._loop_nesting += 1
         try:
             if self._loop_nesting > self.max_loop_nesting:
-                raise SafeExecutionError("代码过于复杂：循环嵌套层数超过限制。")
+                raise SafeExecutionError("Code too complex: loop nesting exceeds limit.")
             self.generic_visit(node)
         finally:
             self._loop_nesting -= 1
@@ -265,14 +265,14 @@ class SafeCodeValidator(ast.NodeVisitor):
         self._comprehension_nesting += 1
         try:
             if self._comprehension_nesting > self.max_comprehension_nesting:
-                raise SafeExecutionError("代码过于复杂：推导式嵌套层数超过限制。")
+                raise SafeExecutionError("Code too complex: comprehension nesting exceeds limit.")
             self.generic_visit(node)
         finally:
             self._comprehension_nesting -= 1
 
     def _check_call_chain_depth(self, node: ast.AST) -> None:
         if self._measure_chain_depth(node) > self.max_call_chain_depth:
-            raise SafeExecutionError("代码过于复杂：调用链过长。")
+            raise SafeExecutionError("Code too complex: call chain too long.")
 
     def _measure_chain_depth(self, node: ast.AST) -> int:
         if isinstance(node, ast.Call):
@@ -321,13 +321,13 @@ class DataHelperAPI:
 
     def value_counts(self, column: str, top_n: int = 10) -> pd.DataFrame:
         if column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {column}")
+            raise SafeExecutionError(f"Column does not exist: {column}")
         counts = self._df[column].value_counts(dropna=False).head(top_n)
         return counts.reset_index().rename(columns={"index": column, column: "count"})
 
     def unique(self, column: str) -> list[Any]:
         if column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {column}")
+            raise SafeExecutionError(f"Column does not exist: {column}")
         return list(self._df[column].drop_duplicates().tolist())
 
     def select(self, columns: list[str]) -> pd.DataFrame:
@@ -335,17 +335,17 @@ class DataHelperAPI:
 
     def filter_equals(self, column: str, value: Any) -> pd.DataFrame:
         if column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {column}")
+            raise SafeExecutionError(f"Column does not exist: {column}")
         return self._df[self._df[column] == value]
 
     def top_rows(self, column: str, n: int = 5, ascending: bool = False) -> pd.DataFrame:
         if column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {column}")
+            raise SafeExecutionError(f"Column does not exist: {column}")
         return self._df.sort_values(column, ascending=ascending).head(n)
 
     def group_mean(self, group_column: str, value_column: str) -> pd.DataFrame:
         if group_column not in self._df.columns or value_column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {group_column} / {value_column}")
+            raise SafeExecutionError(f"Column does not exist: {group_column} / {value_column}")
         return (
             self._df.groupby(group_column, dropna=False)[value_column]
             .mean()
@@ -354,7 +354,7 @@ class DataHelperAPI:
 
     def group_sum(self, group_column: str, value_column: str) -> pd.DataFrame:
         if group_column not in self._df.columns or value_column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {group_column} / {value_column}")
+            raise SafeExecutionError(f"Column does not exist: {group_column} / {value_column}")
         return (
             self._df.groupby(group_column, dropna=False)[value_column]
             .sum()
@@ -363,7 +363,7 @@ class DataHelperAPI:
 
     def correlation(self, col1: str, col2: str) -> float:
         if col1 not in self._df.columns or col2 not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {col1} / {col2}")
+            raise SafeExecutionError(f"Column does not exist: {col1} / {col2}")
         value = self._df[col1].corr(self._df[col2])
         return 0.0 if pd.isna(value) else float(value)
 
@@ -374,7 +374,7 @@ class PlotHelperAPI:
 
     def hist(self, column: str, bins: int = 30, title: str | None = None):
         if column not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {column}")
+            raise SafeExecutionError(f"Column does not exist: {column}")
         fig, ax = plt.subplots(figsize=(8, 4.5))
         sns.histplot(data=self._df, x=column, bins=bins, ax=ax, color="#4F86C6")
         ax.set_title(title or f"{column} 分布")
@@ -385,7 +385,7 @@ class PlotHelperAPI:
 
     def bar(self, x: str, y: str | None = None, title: str | None = None, top_n: int = 10):
         if x not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {x}")
+            raise SafeExecutionError(f"Column does not exist: {x}")
         fig, ax = plt.subplots(figsize=(8, 4.5))
         if y and y in self._df.columns:
             summary = self._df.groupby(x, dropna=False)[y].mean().reset_index(name=y)
@@ -403,7 +403,7 @@ class PlotHelperAPI:
 
     def line(self, x: str, y: str, title: str | None = None):
         if x not in self._df.columns or y not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {x} / {y}")
+            raise SafeExecutionError(f"Column does not exist: {x} / {y}")
         fig, ax = plt.subplots(figsize=(8, 4.5))
         sns.lineplot(data=self._df, x=x, y=y, ax=ax, color="#4F86C6")
         ax.set_title(title or f"{x} vs {y}")
@@ -412,7 +412,7 @@ class PlotHelperAPI:
 
     def scatter(self, x: str, y: str, hue: str | None = None, title: str | None = None):
         if x not in self._df.columns or y not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {x} / {y}")
+            raise SafeExecutionError(f"Column does not exist: {x} / {y}")
         fig, ax = plt.subplots(figsize=(8, 4.5))
         sns.scatterplot(data=self._df, x=x, y=y, hue=hue if hue in self._df.columns else None, ax=ax)
         ax.set_title(title or f"{x} vs {y}")
@@ -421,7 +421,7 @@ class PlotHelperAPI:
 
     def box(self, y: str, x: str | None = None, title: str | None = None):
         if y not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {y}")
+            raise SafeExecutionError(f"Column does not exist: {y}")
         fig, ax = plt.subplots(figsize=(8, 4.5))
         sns.boxplot(data=self._df, x=x if x in self._df.columns else None, y=y, ax=ax)
         ax.set_title(title or f"{y} 箱线图")
@@ -637,7 +637,7 @@ class StatsHelperAPI:
         top_n: int | None = SETTINGS.default_group_top_n,
     ) -> dict[str, Any]:
         if group_by not in self._df.columns:
-            raise SafeExecutionError(f"列不存在: {group_by}")
+            raise SafeExecutionError(f"Column does not exist: {group_by}")
         if top_n is not None and top_n <= 0:
             raise SafeExecutionError("top_n 必须为正整数。")
 
@@ -653,7 +653,7 @@ class StatsHelperAPI:
                 agg_map[alias] = (None, "count", None)
                 continue
             if not isinstance(column, str) or column not in self._df.columns:
-                raise SafeExecutionError(f"列不存在: {column}")
+                raise SafeExecutionError(f"Column does not exist: {column}")
             if op in {"mean", "median", "sum", "min", "max"} and not pd.api.types.is_numeric_dtype(self._df[column]):
                 raise SafeExecutionError(f"{op} 仅支持数值列: {column}")
             positive_label = metric.get("positive_label") if op == "rate" else None
@@ -706,7 +706,7 @@ class StatsHelperAPI:
         output = result.reset_index().rename(columns={group_by: "group"})
         if sort_by:
             if sort_by not in output.columns:
-                raise SafeExecutionError(f"排序列不存在: {sort_by}")
+                raise SafeExecutionError(f"排序Column does not exist: {sort_by}")
             output = output.sort_values(sort_by, ascending=ascending, kind="stable")
         else:
             output = output.sort_values("group", ascending=True, kind="stable")
@@ -930,7 +930,7 @@ class StatsHelperAPI:
     def _validate_columns(self, columns: list[str]) -> None:
         for column in columns:
             if column not in self._df.columns:
-                raise SafeExecutionError(f"列不存在: {column}")
+                raise SafeExecutionError(f"Column does not exist: {column}")
 
     def _infer_positive_label(self, series: pd.Series, explicit_label: Any = None) -> dict[str, Any]:
         if explicit_label is not None:

@@ -63,14 +63,14 @@ def prepare_analysis_dataframe(df: pd.DataFrame, profile_artifact: dict[str, Any
                 analysis_df[column] = converted
                 steps.append({"type": "coerce_datetime", "columns": [str(column)]})
             else:
-                warnings.append(f"{column} 被识别为日期列，但无法稳定转换为 datetime。")
+                warnings.append(f"{column} was identified as a date column but could not be reliably converted to datetime.")
 
         if semantic_type in {"identifier_like", "text_like"}:
-            warnings.append(f"{column} 为 {semantic_type}，建议仅用于检索或说明，不建议直接建模。")
+            warnings.append(f"{column}  is {semantic_type}. Recommended for retrieval or reference only, not for modeling.")
         retained_columns.append(str(column))
 
     if not steps:
-        steps.append({"type": "noop", "reason": "analysis阶段未执行必要的类型转换。"})
+        steps.append({"type": "noop", "reason": "Analysis stage: no type conversions were necessary."})
 
     payload = {
         "stage": "analysis",
@@ -95,7 +95,7 @@ def plan_model_preprocessing(
     excluded_columns: list[dict[str, str]] = []
 
     if target is not None and target not in df.columns:
-        raise ModelPrepPlanError(f"目标列不存在: {target}")
+        raise ModelPrepPlanError(f"Target column does not exist: {target}")
 
     target_status = "not_provided"
     selected_target: str | None = target
@@ -112,22 +112,22 @@ def plan_model_preprocessing(
         elif len(candidates) > 1:
             target_status = "ambiguous"
             selected_target = None
-            warnings.append(f"检测到多个目标候选列：{', '.join(candidates[:SETTINGS.model_prep_max_target_candidates])}。")
+            warnings.append(f"Multiple target candidate columns detected: {', '.join(candidates[:SETTINGS.model_prep_max_target_candidates])}。")
         else:
             target_status = "not_found"
-            warnings.append("未检测到明确目标候选列，请显式指定 target。")
+            warnings.append("No clear target candidate column detected. Please specify target explicitly.")
     else:
         target_meta = profile_columns.get(target, {})
         target_semantic = str(target_meta.get("semantic_type", "unknown"))
         if target_semantic in {"identifier_like", "text_like", "unknown"}:
-            raise ModelPrepPlanError(f"目标列不适合建模: {target}（{target_semantic}）")
+            raise ModelPrepPlanError(f"Target column is not suitable for modeling: {target} ({target_semantic})")
         target_status = "explicit_validated"
 
     requested_features: list[str]
     if features is not None:
         for feature in features:
             if feature not in df.columns:
-                raise ModelPrepPlanError(f"特征列不存在: {feature}")
+                raise ModelPrepPlanError(f"Feature column does not exist: {feature}")
         requested_features = list(features)
     else:
         requested_features = [str(col) for col in df.columns]
@@ -162,7 +162,7 @@ def plan_model_preprocessing(
             feature_types["categorical"].append(feature)
 
     if not candidate_features:
-        warnings.append("未找到可用特征列，请显式指定 features 并检查列语义。")
+        warnings.append("No usable feature columns found. Specify features explicitly and check column semantics.")
 
     payload = {
         "target": selected_target,
@@ -195,13 +195,13 @@ def prepare_model_inputs(
 
     selected_target = target or model_prep_plan.get("target")
     if not isinstance(selected_target, str) or selected_target not in df.columns:
-        raise ModelPrepPlanError("未找到可用目标列，请先在 model_prep_plan 中明确 target。")
+        raise ModelPrepPlanError("No usable target column found. Specify target in model_prep_plan first.")
 
     plan_features = model_prep_plan.get("candidate_features")
     if features is not None:
         for feature in features:
             if feature not in df.columns:
-                raise ModelPrepPlanError(f"特征列不存在: {feature}")
+                raise ModelPrepPlanError(f"Feature column does not exist: {feature}")
         candidate_features = list(features)
     elif isinstance(plan_features, list):
         candidate_features = [str(item) for item in plan_features if isinstance(item, str)]
@@ -226,7 +226,7 @@ def prepare_model_inputs(
             continue
         if semantic_type == "datetime_like":
             excluded_columns.append({"column": feature, "reason": "datetime_like"})
-            warnings.append(f"{feature} 为 datetime_like，当前 baseline ML 阶段默认排除。")
+            warnings.append(f"{feature}  is datetime_like，当前 baseline ML 阶段默认排除。")
             continue
 
         usable_features.append(feature)

@@ -115,7 +115,7 @@ def _looks_like_metric_or_target(message: str) -> bool:
 def _build_simple_mode_messages(compressed_messages: list[dict[str, str]]) -> list[dict[str, str]]:
     if not compressed_messages:
         return []
-    summary_message = compressed_messages[0] if "会话摘要" in compressed_messages[0].get("content", "") else None
+    summary_message = compressed_messages[0] if "Conversation summary" in compressed_messages[0].get("content", "") else None
     latest_user_message: dict[str, str] | None = None
     latest_assistant_message: dict[str, str] | None = None
     for message in reversed(compressed_messages):
@@ -213,7 +213,7 @@ def compress_conversation_messages(
 
     summary_message = {
         "type": "assistant",
-        "content": "会话摘要（供后续推理复用，不要逐字复述）：\n" + json.dumps(summary_payload, ensure_ascii=False),
+        "content": "Conversation summary（For follow-up reasoning, do not repeat verbatim）：\n" + json.dumps(summary_payload, ensure_ascii=False),
     }
     messages_for_model = [summary_message]
     messages_for_model.extend(
