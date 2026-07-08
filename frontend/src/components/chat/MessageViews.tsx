@@ -1,5 +1,7 @@
 import { Bot, ChevronDown, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { UploadedDataset } from '../../types/data';
 import type { ChatMessage } from './types';
 import { DataPreviewCard } from './DatasetViews';
@@ -123,7 +125,31 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
 
       <div className={`max-w-[72%] rounded-[22px] border px-4 py-3 text-[15px] leading-7 shadow-[0_8px_20px_rgba(15,23,42,0.035)] ${bubbleClass}`}>
         <div className="flex min-h-[48px] items-center">
-          <div className="whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-900">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-900">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                table({ children }) {
+                  return <div className="overflow-auto my-2"><table className="w-full border-collapse text-sm">{children}</table></div>;
+                },
+                th({ children }) {
+                  return <th className="border border-slate-300 bg-slate-100 px-2 py-1 font-semibold text-left">{children}</th>;
+                },
+                td({ children }) {
+                  return <td className="border border-slate-200 px-2 py-1">{children}</td>;
+                },
+                code({ className, children, ...props }) {
+                  const isInline = !className;
+                  if (isInline) {
+                    return <code className="rounded bg-slate-100 px-1 py-0.5 text-sm font-mono" {...props}>{children}</code>;
+                  }
+                  return <pre className="rounded-lg bg-slate-900 p-3 my-2 overflow-x-auto"><code className="text-sm text-slate-100" {...props}>{children}</code></pre>;
+                },
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
         </div>
         {!isUser && !isStatus && !isError && message.routeInfo && (
           <div className="mt-3 border-t border-slate-200/80 pt-3">
