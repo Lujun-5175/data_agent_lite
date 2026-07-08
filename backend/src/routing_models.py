@@ -30,21 +30,22 @@ RoutingPrimaryMode = Literal[
 ]
 RouteSource = Literal["llm_primary", "llm_with_guardrail", "heuristic_fallback"]
 
+ROUTING_PRIMARY_MODES = (
+    "direct_answer",
+    "dataset_overview",
+    "analysis",
+    "visualization",
+    "modeling",
+    "clarification",
+)
+
 
 class RoutingDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    primary_mode: RoutingPrimaryMode
-    confidence_score: float = Field(ge=0.0, le=1.0)
-    confidence_band: ConfidenceBand = "medium"
+    primary_mode: str = "analysis"
     needs_dataset: bool = False
     needs_tool_execution: bool = False
-    needs_artifact_context: bool = False
-    requested_capabilities: list[RoutingCapability] = Field(default_factory=list)
-    ambiguity_flags: list[str] = Field(default_factory=list)
-    guardrail_actions: list[str] = Field(default_factory=list)
-    fallback_reasons: list[str] = Field(default_factory=list)
     reasoning_summary: str = ""
     execution_plan: list[str] = Field(default_factory=list)
-    deliverables: list[str] = Field(default_factory=list)
-    route_source: RouteSource = "llm_primary"
+    route_source: str = "llm"

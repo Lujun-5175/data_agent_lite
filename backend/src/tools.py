@@ -32,7 +32,7 @@ from src.data_manager import (
     register_dataset_generated_image,
 )
 from src.errors import AppError
-from src.ml_helpers import BaselineMLService, MLHelperError
+from src.ml_helpers import BaselineMLService, MLHelperError, MLHelperAPI
 from src.self_correction import build_repair_prompt, classify_execution_error
 from src.result_types import build_artifact, get_artifact_repository
 from src.settings import SETTINGS
@@ -46,6 +46,7 @@ from src.safe_executor import (
     _StdoutCollector,
     _execution_timeout,
     bind_current_dataset_id,
+    get_current_dataset_id,
     consume_current_image_event,
     set_current_image_event,
     configure_fonts,

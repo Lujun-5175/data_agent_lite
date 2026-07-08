@@ -19,14 +19,74 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-from src.data_manager import get_dataset, get_model_prep_plan, get_schema_profile
+from src.data_manager import DatasetLoadError, get_dataset, get_model_prep_plan, get_schema_profile
 from src.preprocessing import ModelPrepPlanError, infer_positive_label, prepare_model_inputs
 from src.result_types import build_artifact, get_artifact_repository
+from src.safe_executor import SafeExecutionError
 from src.settings import SETTINGS
 
 
 class MLHelperError(ValueError):
     pass
+
+
+class MLHelperAPI:
+    """ML helper API exposed to the LLM's Python execution context. Delegates to BaselineMLService."""
+
+    def __init__(self, df: pd.DataFrame, *, dataset_id: str | None):
+        self._df = df
+        self._dataset_id = dataset_id
+
+    def logistic_fit(
+        self,
+        target: str,
+        features: list[str] | None = None,
+        test_size: float | None = None,
+        positive_label: Any = None,
+    ) -> dict[str, Any]:
+        service = self._service()
+        try:
+            return service.logistic_fit(target, features=features, test_size=test_size, positive_label=positive_label)
+        except DatasetLoadError as exc:
+            raise SafeExecutionError(exc.message) from exc
+        except MLHelperError as exc:
+            raise SafeExecutionError(str(exc)) from exc
+
+    def linear_regression_fit(self, target: str, features: list[str] | None = None, test_size: float | None = None) -> dict[str, Any]:
+        service = self._service()
+        try:
+            return service.linear_regression_fit(target, features=features, test_size=test_size)
+        except DatasetLoadError as exc:
+            raise SafeExecutionError(exc.message) from exc
+        except MLHelperError as exc:
+            raise SafeExecutionError(str(exc)) from exc
+
+    def metrics(self, model_artifact_id: str | None = None) -> dict[str, Any]:
+        service = self._service()
+        try:
+            return service.metrics(model_artifact_id=model_artifact_id)
+        except MLHelperError as exc:
+            raise SafeExecutionError(str(exc)) from exc
+
+    def feature_importance(self, model_artifact_id: str | None = None, top_k: int = 10) -> dict[str, Any]:
+        service = self._service()
+        try:
+            return service.feature_importance(model_artifact_id=model_artifact_id, top_k=top_k)
+        except MLHelperError as exc:
+            raise SafeExecutionError(str(exc)) from exc
+
+    def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
+        service = self._service()
+        try:
+            return service.latest(artifact_type=artifact_type)
+        except MLHelperError as exc:
+            raise SafeExecutionError(str(exc)) from exc
+
+    def _service(self) -> BaselineMLService:
+        dataset_id = self._dataset_id
+        if not dataset_id:
+            raise SafeExecutionError("No active dataset. Please upload CSV before retraining the model.")
+        return BaselineMLService(dataset_id=dataset_id)
 
 
 class BaselineMLService:
