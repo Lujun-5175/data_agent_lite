@@ -184,6 +184,7 @@ def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
         "Select minimal necessary tools based on routing_decision. "
         "Stats questions → stats_execute, exploratory analysis → python_inter, "
         "clear modeling requests → `ml_execute`, visualization → `fig_inter`."
+    )
 
 
 model = ChatDeepSeek(
