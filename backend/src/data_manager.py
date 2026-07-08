@@ -545,20 +545,20 @@ def calculate_correlation(dataset_id: str, col1: str, col2: str) -> dict[str, An
 def _interpret_correlation(value: float) -> str:
     absolute = abs(value)
     if absolute < 0.2:
-        strength = "弱"
+        strength = "Very weak"
     elif absolute < 0.4:
-        strength = "较弱"
+        strength = "Weak"
     elif absolute < 0.6:
-        strength = "中等"
+        strength = "Moderate"
     elif absolute < 0.8:
-        strength = "较强"
+        strength = "Strong"
     else:
-        strength = "强"
+        strength = "Very strong"
 
     if value > 0:
-        direction = "正相关"
+        direction = " positive"
     elif value < 0:
-        direction = "负相关"
+        direction = " negative"
     else:
         direction = "No significant linear correlation"
 

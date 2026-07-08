@@ -177,7 +177,7 @@ async def data_preview(dataset_id: str) -> dict[str, object]:
 @app.get("/api/audit/runs")
 async def audit_runs(request: Request, limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, object]:
     if not (IS_DEVELOPMENT or SETTINGS.audit_api_enabled):
-        raise AppError("not_found", "Resource not found。", 404, stage="http")
+        raise AppError("not_found", "Resource not found.", 404, stage="http")
     return {"runs": read_recent_records(limit=limit), "limit": limit}
 
 
@@ -185,7 +185,7 @@ async def audit_runs(request: Request, limit: int = Query(default=100, ge=1, le=
 async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
     original_filename = file.filename or "uploaded.csv"
     if not original_filename.lower().endswith(".csv"):
-        raise AppError("invalid_file_type", "Only CSV files are supported上传。", 400)
+        raise AppError("invalid_file_type", "Only CSV files are supported.", 400)
 
     safe_filename = f"{uuid4().hex}.csv"
     stored_path = (TEMP_DATA_DIR / safe_filename).resolve()
@@ -202,7 +202,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
                     break
                 bytes_written += len(chunk)
                 if bytes_written > MAX_UPLOAD_SIZE_BYTES:
-                    raise AppError("file_too_large", "Upload file exceeds 50MB 限制。", 413)
+                    raise AppError("file_too_large", "Upload file exceeds 50MB limit.", 413)
                 target.write(chunk)
 
         dataset = load_csv_file(stored_path, original_filename)
@@ -210,7 +210,7 @@ async def upload_csv(file: UploadFile = File(...)) -> JSONResponse:
         return JSONResponse(
             content={
                 "status": "success",
-                "message": f"File loaded successfully【{dataset.original_filename}！包含 {dataset.row_count} 行，{len(dataset.columns)} 列。",
+                    "message": f"File loaded successfully: {dataset.original_filename} ({dataset.row_count} rows, {len(dataset.columns)} cols).",
                 "dataset_id": dataset.dataset_id,
                 "original_filename": dataset.original_filename,
                 "preview": dataset.preview,
@@ -248,7 +248,7 @@ async def delete_dataset(dataset_id: str) -> dict[str, object]:
     return {
         "status": "success",
         "dataset_id": dataset_id,
-        "message": "Dataset deleted。",
+        "message": "Dataset deleted.",
     }
 
 
@@ -272,7 +272,7 @@ if IS_DEVELOPMENT:
     try:
         from langserve import add_routes
     except Exception:
-        logger.warning("langserve Not installed or import failed，Development environment will skip /agent Route injection。")
+        logger.warning("langserve not installed or import failed. Development environment will skip /agent route injection.")
     else:
         add_routes(
             app,

@@ -104,10 +104,10 @@ def resolve_final_branch(
 def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[str]) -> str:
     def _format_column_list(columns: list[str], *, limit: int = 8) -> str:
         if not columns:
-            return "暂无"
+            return "None"
         visible_columns = columns[:limit]
-        suffix = f" 等 {len(columns)} 列" if len(columns) > limit else ""
-        return "、".join(visible_columns) + suffix
+        suffix = f" and {len(columns)} more cols" if len(columns) > limit else ""
+        return ", ".join(visible_columns) + suffix
 
     columns = getattr(dataset, "columns", [])
     numeric_columns = [
@@ -125,18 +125,18 @@ def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[s
     warning_lines = [str(item) for item in warnings[:3] if item]
 
     lines = [
-        "This dataset has been loaded，Let me give you a quick overview：",
+        "This dataset has been loaded. Let me give you a quick overview:",
         "",
-        f"- 文件名：{getattr(dataset, 'original_filename', 'uploaded.csv')}",
-        f"- 数据规模：{getattr(dataset, 'row_count', 0):,} 行 × {getattr(dataset, 'column_count', 0):,} 列",
-        f"- 分析基准：{getattr(dataset, 'analysis_basis', 'raw_df')}",
-        f"- 数值字段：{_format_column_list(numeric_columns)}",
-        f"- 分类/日期字段：{_format_column_list(categorical_columns)}",
+        f"- Filename: {getattr(dataset, 'original_filename', 'uploaded.csv')}",
+        f"- Shape: {getattr(dataset, 'row_count', 0):,} rows x {getattr(dataset, 'column_count', 0):,} cols",
+        f"- Analysis basis: {getattr(dataset, 'analysis_basis', 'raw_df')}",
+        f"- Numeric fields: {_format_column_list(numeric_columns)}",
+        f"- Categorical/date fields: {_format_column_list(categorical_columns)}",
     ]
     if warning_lines:
-        lines.extend(["", "I also noticed a few data quality/Field type hints："])
+        lines.extend(["", "I also noticed a few data quality / field type hints:"])
         lines.extend(f"- {warning}" for warning in warning_lines)
-    lines.extend(["", "You can click the suggested questions above，or start from these directions："])
+    lines.extend(["", "You can click the suggested questions above, or start from these directions:"])
     lines.extend(f"- {question}" for question in recommended_prompts)
     return "\n".join(lines)
 
@@ -170,10 +170,10 @@ async def generate_dataset_overview_reply(
     messages = [
         SystemMessage(
             content=(
-                "你是 Data Agent 's dataset overview assistant。"
-                "Based on the given structured context, write a concise、自然、trustworthy dataset overview。"
-                "Must cover: data size, field categories, notable warnings, suggestions on where to start."
-                "Do not fabricate any statistics not present in the input。"
+                "You are Data Agent's dataset overview assistant. "
+                "Based on the given structured context, write a concise, natural, trustworthy dataset overview. "
+                "Must cover: data size, field categories, notable warnings, suggestions on where to start. "
+                "Do not fabricate any statistics not present in the input. "
                 "Output plain text, not JSON."
             )
         ),
