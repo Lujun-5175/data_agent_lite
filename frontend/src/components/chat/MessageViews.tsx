@@ -1,11 +1,9 @@
-import { Bot, ChevronDown, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
-import { useState } from 'react';
+import { Bot, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { UploadedDataset } from '../../types/data';
 import type { ChatMessage } from './types';
 import { DataPreviewCard } from './DatasetViews';
-import { summarizeRouteInfo } from './utils';
 
 export function SuggestedPrompts({
   prompts,
@@ -99,7 +97,6 @@ export function SampleDataPanel({
 }
 
 export function ChatBubble({ message }: { message: ChatMessage }) {
-  const [showRouteInfo, setShowRouteInfo] = useState(false);
   const isUser = message.type === 'user';
   const isStatus = message.kind === 'status';
   const isError = message.kind === 'error';
@@ -151,91 +148,6 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
             </ReactMarkdown>
           </div>
         </div>
-        {!isUser && !isStatus && !isError && message.routeInfo && (
-          <div className="mt-3 border-t border-slate-200/80 pt-3">
-            <button
-              type="button"
-              onClick={() => setShowRouteInfo((prev) => !prev)}
-              className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-slate-200 bg-slate-50/80 px-3 py-2 text-left text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
-            >
-              <span>{summarizeRouteInfo(message.routeInfo)}</span>
-              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${showRouteInfo ? 'rotate-180' : ''}`} />
-            </button>
-            {showRouteInfo && (
-              <div className="mt-2 rounded-[14px] border border-slate-200 bg-slate-50/65 px-3 py-3 text-xs leading-6 text-slate-600">
-                <div>Primary Mode: {message.routeInfo.primaryMode || 'N/A'}</div>
-                <div className="mt-1">Final Branch: {message.routeInfo.finalBranch || 'N/A'}</div>
-                <div className="mt-1">Ambiguity Flags: {message.routeInfo.ambiguityFlags.length > 0 ? message.routeInfo.ambiguityFlags.join(', ') : 'None'}</div>
-                <div className="mt-1">Conflict Flags: {message.routeInfo.conflictFlags.length > 0 ? message.routeInfo.conflictFlags.join(', ') : 'None'}</div>
-                <div className="mt-1">Requested Capabilities: {message.routeInfo.requestedCapabilities.length > 0 ? message.routeInfo.requestedCapabilities.join(', ') : 'None'}</div>
-                <div className="mt-1">
-                  Capability Assessment:
-                  {[
-                    message.routeInfo.requiresMl ? 'ML Required' : null,
-                    message.routeInfo.requiresChart ? 'Chart Required' : null,
-                    message.routeInfo.requiresPythonAnalysis ? 'Analysis Required' : null,
-                    message.routeInfo.isFollowUp ? 'Follow-up' : null,
-                  ]
-                    .filter(Boolean)
-                    .join(', ') || 'General Response'}
-                </div>
-                <div className="mt-1">Guardrail Actions: {message.routeInfo.guardrailActions.length > 0 ? message.routeInfo.guardrailActions.join(', ') : 'None'}</div>
-                <div className="mt-1">Fallback Reasons: {message.routeInfo.fallbackReasons.length > 0 ? message.routeInfo.fallbackReasons.join(', ') : 'None'}</div>
-                <div className="mt-2 border-t border-slate-200/80 pt-2">
-                  <div>
-                    Unified Plan Status:
-                    {message.routeInfo.taskPlanAvailable
-                      ? 'Generated'
-                      : message.routeInfo.taskPlanGenerationFailed
-                        ? 'Generation Failed'
-                        : message.routeInfo.taskPlanAttempted
-                          ? 'Not Generated'
-                          : 'Not Attempted'}
-                  </div>
-                  <div className="mt-1">Plan Goal: {message.routeInfo.taskPlanGoal || 'None'}</div>
-                  <div className="mt-1">
-                    Plan Confidence:
-                    {typeof message.routeInfo.taskPlanConfidence === 'number'
-                      ? message.routeInfo.taskPlanConfidence.toFixed(2)
-                      : 'N/A'}
-                  </div>
-                  <div className="mt-1">
-                    Plan Ambiguity:
-                    {message.routeInfo.taskPlanAmbiguityFlags.length > 0 ? message.routeInfo.taskPlanAmbiguityFlags.join(', ') : 'None'}
-                  </div>
-                  <div className="mt-1">
-                    Plan Assumptions:
-                    {message.routeInfo.taskPlanAssumptions.length > 0 ? message.routeInfo.taskPlanAssumptions.join('; ') : 'None'}
-                  </div>
-                  <div className="mt-1">
-                    Tasks:
-                    {message.routeInfo.taskPlanTasks.length > 0 ? (
-                      <div className="mt-1 space-y-1">
-                        {message.routeInfo.taskPlanTasks.map((task) => (
-                          <div key={`${task.taskId}-${task.taskType}`} className="rounded border border-slate-200 bg-white/60 px-2 py-1">
-                            <div>{task.taskId || 'task'} · {task.taskType || 'unknown'}</div>
-                            <div>{task.description || 'No description'}</div>
-                            <div>Depends on: {task.dependsOn.length > 0 ? task.dependsOn.join(', ') : 'None'}</div>
-                            <div>Outputs: {task.requiredOutputs.length > 0 ? task.requiredOutputs.join(', ') : 'None'}</div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      'None'
-                    )}
-                  </div>
-                  <div className="mt-2 border-t border-slate-200/80 pt-2">
-                    <div className="font-medium text-slate-700">Debug Info</div>
-                    <div className="mt-1">
-                      Legacy Route:
-                      {message.routeInfo.suggestedPlan.length > 0 ? message.routeInfo.suggestedPlan.join(' -> ') : 'None'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {isUser && (
