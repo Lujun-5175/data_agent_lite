@@ -9,7 +9,7 @@ import httpx
 from fastapi import Request
 from langgraph.errors import GraphRecursionError
 
-from src.agent import generate_general_chat_reply, get_dataset_required_decision
+from src.agent import generate_general_chat_reply
 from src.audit_log import get_audit_logger
 from src.conversation_context import compress_conversation_messages
 from src.data_manager import get_dataset
@@ -17,12 +17,10 @@ from src.errors import AppError
 from src.intent_planner import (
     get_intent_planner_model,
     plan_request_with_llm,
-    validate_task_plan_against_routing,
 )
 from src.request_context import (
     get_degradation_mode,
     get_request_id,
-    set_route_diagnostics,
 )
 from src.request_parsing import (
     extract_dataset_id_from_payload,
@@ -31,136 +29,25 @@ from src.request_parsing import (
     has_prior_analysis_context,
 )
 from src.result_types import get_artifact_repository
-from src.plan_executor import build_executable_task_plan
 from src.routing_executor import ExecutorDependencies, execute_chat_stream_response, resolve_final_branch
 from src.routing_models import RoutingDecision
-from src.routing_projection import (
-    build_route_audit_payload,
-    build_route_diagnostics,
-    derive_legacy_route_projection,
-)
-from src.routing_signals import (
-    collect_required_ml_artifacts,
-    is_chart_request,
-    is_explicit_ml_request,
-    is_follow_up_request,
-)
-from src.routing_rules import RoutingContext, interpret_request_decision_from_llm
 from src.sse import format_sse, now_iso
-from src.task_plan_models import TaskPlan
 
 logger = logging.getLogger(__name__)
-
-ML_RESULT_ARTIFACT_TYPES = {"model_result", "metrics_result", "feature_importance_result"}
-
 
 @dataclass(slots=True)
 class ChatRequestRequirements:
     dataset_id: str | None
     messages: list[dict[str, object]]
     compressed_messages: list[dict[str, str]]
-    simple_mode_messages: list[dict[str, str]]
     latest_user_message: str
     prior_analysis_active: bool
     routing_decision: RoutingDecision
-    task_plan: TaskPlan | None
-    executable_task_plan: TaskPlan | None
-    task_plan_attempted: bool
-    task_plan_generation_failed: bool
-    chart_requested: bool
-    explicit_ml_request: bool
-    required_ml_artifacts: set[str]
-    follow_up_message: dict[str, object] | None
     final_branch: str
     history_message_count: int
     compressed_history_count: int
     artifact_refs_count: int
     conversation_summary: dict[str, Any] | None
-
-    @property
-    def messages_for_graph(self) -> list[dict[str, object]]:
-        messages_for_graph: list[dict[str, object]] = list(self.compressed_messages)
-        if self.follow_up_message is not None:
-            messages_for_graph.append(self.follow_up_message)
-        return messages_for_graph
-
-    @property
-    def simple_messages_for_graph(self) -> list[dict[str, object]]:
-        messages_for_graph: list[dict[str, object]] = list(self.simple_mode_messages)
-        if self.follow_up_message is not None:
-            messages_for_graph.append(self.follow_up_message)
-        return messages_for_graph
-
-    @property
-    def legacy_route(self):
-        return derive_legacy_route_projection(self.routing_decision)
-
-
-def _normalize_text(value: str) -> str:
-    return " ".join(value.strip().lower().split())
-
-
-def _looks_like_follow_up_request(message: str) -> bool:
-    return is_follow_up_request(_normalize_text(message))
-
-
-def _looks_like_chart_request(message: str) -> bool:
-    return is_chart_request(_normalize_text(message))
-
-
-def _looks_like_explicit_ml_request(message: str) -> bool:
-    return is_explicit_ml_request(_normalize_text(message))
-
-
-def _collect_required_ml_artifacts(message: str) -> set[str]:
-    return collect_required_ml_artifacts(_normalize_text(message))
-
-
-def _build_follow_up_context_message(
-    dataset_id: str,
-    latest_user_message: str,
-    *,
-    force_follow_up: bool = False,
-) -> dict[str, object] | None:
-    if not force_follow_up and not _looks_like_follow_up_request(latest_user_message):
-        return None
-
-    latest_artifact = get_artifact_repository().get_latest(dataset_id)
-    if not isinstance(latest_artifact, dict):
-        return None
-
-    artifact_type = str(latest_artifact.get("artifact_type", "unknown"))
-    if artifact_type == "schema_profile":
-        summary = {
-            "artifact_type": artifact_type,
-            "artifact_id": latest_artifact.get("artifact_id"),
-            "dataset_id": latest_artifact.get("dataset_id"),
-            "columns": latest_artifact.get("columns"),
-            "warnings": latest_artifact.get("warnings", []),
-        }
-    elif artifact_type in ML_RESULT_ARTIFACT_TYPES:
-        summary = {
-            "artifact_type": artifact_type,
-            "artifact_id": latest_artifact.get("artifact_id"),
-            "dataset_id": latest_artifact.get("dataset_id"),
-            "target": latest_artifact.get("target"),
-            "model_type": latest_artifact.get("model_type"),
-            "metrics": latest_artifact.get("metrics", {}),
-            "items": latest_artifact.get("items", latest_artifact.get("coefficient_items", [])),
-            "warnings": latest_artifact.get("warnings", []),
-        }
-    else:
-        summary = {
-            "artifact_type": artifact_type,
-            "artifact_id": latest_artifact.get("artifact_id"),
-            "dataset_id": latest_artifact.get("dataset_id"),
-            "warnings": latest_artifact.get("warnings", []),
-        }
-
-    return {
-        "type": "assistant",
-        "content": "Latest structured result for explanation or follow-up：\n" + json.dumps(summary, ensure_ascii=False),
-    }
 
 
 def _build_event_payload(
@@ -319,10 +206,8 @@ def _record_chat_route_audit(requirements: ChatRequestRequirements) -> None:
             tool_name="chat_route",
             dataset_id=requirements.dataset_id,
             tool_args={
-                "intent_type": requirements.legacy_route.intent_type,
-                "chart_requested": requirements.chart_requested,
-                "explicit_ml_request": requirements.explicit_ml_request,
-                "is_dataset_overview": requirements.final_branch == "dataset_overview",
+                "primary_mode": requirements.routing_decision.primary_mode,
+                "needs_dataset": requirements.routing_decision.needs_dataset,
             },
             execution_status="success",
             latency_ms=0.0,
@@ -330,13 +215,12 @@ def _record_chat_route_audit(requirements: ChatRequestRequirements) -> None:
                 "request_id": get_request_id(),
                 "message_preview": requirements.latest_user_message[:120],
                 "route_stage": "request_analysis",
-                "routing": build_route_audit_payload(
-                    requirements.routing_decision,
-                    final_branch=requirements.final_branch,
-                    task_plan=requirements.task_plan,
-                    task_plan_attempted=requirements.task_plan_attempted,
-                    task_plan_generation_failed=requirements.task_plan_generation_failed,
-                ),
+                "routing": {
+                    "primary_mode": requirements.routing_decision.primary_mode,
+                    "needs_dataset": requirements.routing_decision.needs_dataset,
+                    "final_branch": requirements.final_branch,
+                    "route_source": requirements.routing_decision.route_source,
+                },
             },
         )
     except Exception:
@@ -357,20 +241,7 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     schema_profile: dict[str, Any] | None = None
     recommended_prompts: list[str] = []
 
-    if not dataset_id:
-        dataset_required_decision = get_dataset_required_decision(
-            latest_user_message,
-            dataset_columns=[],
-            prior_analysis_active=prior_analysis_active,
-        )
-        if dataset_required_decision.matched:
-            raise AppError(
-                "dataset_required",
-                "No dataset selected. Please upload a CSV file first.",
-                400,
-                stage="validation",
-            )
-    else:
+    if dataset_id:
         dataset = get_dataset(dataset_id)
         latest_artifact = get_artifact_repository().get_latest(dataset_id)
         dataset_summary = {
@@ -398,15 +269,10 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
     if not compressed.messages_for_model:
         raise AppError("history_compression_error", "Conversation history compression failed. Please send a new request.", 422, stage="history_compression")
 
-    routing_context = RoutingContext(
-        message=latest_user_message,
-        dataset_columns=dataset_columns,
-        prior_analysis_active=prior_analysis_active,
-        latest_artifact=latest_artifact,
-    )
     latest_artifact_type = latest_artifact.get("artifact_type") if isinstance(latest_artifact, dict) else None
     available_artifact_types = [latest_artifact_type.strip()] if isinstance(latest_artifact_type, str) and latest_artifact_type.strip() else []
-    planning_result = plan_request_with_llm(
+
+    routing_decision = plan_request_with_llm(
         latest_user_message,
         dataset_columns=dataset_columns,
         prior_analysis_active=prior_analysis_active,
@@ -416,83 +282,37 @@ def analyze_chat_request(payload: dict[str, object]) -> ChatRequestRequirements:
         available_artifact_types=available_artifact_types,
         recommended_prompts=recommended_prompts,
     )
-    routing_decision = interpret_request_decision_from_llm(
-        routing_context,
-        llm_decision=planning_result.routing_decision if planning_result is not None else None,
-    )
-    legacy_route = derive_legacy_route_projection(routing_decision)
-    task_plan_attempted = routing_decision.needs_dataset or routing_decision.needs_tool_execution
-    task_plan = validate_task_plan_against_routing(
-        routing_decision=routing_decision,
-        task_plan=planning_result.task_plan if planning_result is not None else None,
-    )
-    executable_task_plan = build_executable_task_plan(task_plan)
+
+    # Safe fallback if LLM is unavailable or JSON parsing fails
+    if routing_decision is None:
+        routing_decision = RoutingDecision(
+            primary_mode="analysis" if dataset_id else "direct_answer",
+            needs_dataset=bool(dataset_id),
+            needs_tool_execution=bool(dataset_id),
+            route_source="fallback",
+        )
+
+    # Check if dataset is required but missing
+    if routing_decision.needs_dataset and not dataset_id:
+        raise AppError(
+            "dataset_required",
+            "No dataset selected. Please upload a CSV file first.",
+            400,
+            stage="validation",
+        )
+
     final_branch = resolve_final_branch(
         dataset_id=dataset_id,
         routing_decision=routing_decision,
-        task_plan=executable_task_plan,
     )
-    set_route_diagnostics(
-        build_route_diagnostics(
-            routing_decision,
-            final_branch=final_branch,
-            task_plan=task_plan,
-            task_plan_attempted=task_plan_attempted,
-            task_plan_generation_failed=task_plan_attempted and task_plan is None,
-        )
-    )
-    simple_mode_messages = []
-    if compressed.summary_message is not None:
-        summary_message = compressed.summary_message
-        latest_user_message_for_simple: dict[str, str] | None = None
-        latest_assistant_message_for_simple: dict[str, str] | None = None
-        for message in reversed(compressed.messages_for_model):
-            role = str(message.get("type", "user"))
-            if latest_user_message_for_simple is None and role in {"human", "user"}:
-                latest_user_message_for_simple = message
-                continue
-            if (
-                latest_assistant_message_for_simple is None
-                and role in {"ai", "assistant"}
-                and message is not summary_message
-            ):
-                latest_assistant_message_for_simple = message
-            if latest_user_message_for_simple is not None and latest_assistant_message_for_simple is not None:
-                break
-        simple_mode_messages.append(summary_message)
-        if latest_assistant_message_for_simple is not None:
-            simple_mode_messages.append(latest_assistant_message_for_simple)
-        if latest_user_message_for_simple is not None:
-            simple_mode_messages.append(latest_user_message_for_simple)
-    else:
-        simple_mode_messages = list(compressed.messages_for_model[-2:])
-    if not simple_mode_messages:
-        simple_mode_messages = list(compressed.messages_for_model)
 
     return ChatRequestRequirements(
         dataset_id=dataset_id,
         messages=messages,
         compressed_messages=compressed.messages_for_model,
-        simple_mode_messages=simple_mode_messages,
         latest_user_message=latest_user_message,
         prior_analysis_active=prior_analysis_active,
         routing_decision=routing_decision,
-        task_plan=task_plan,
-        executable_task_plan=executable_task_plan,
-        task_plan_attempted=task_plan_attempted,
-        task_plan_generation_failed=task_plan_attempted and task_plan is None,
-        chart_requested=legacy_route.requires_chart or _looks_like_chart_request(latest_user_message),
-        explicit_ml_request=_looks_like_explicit_ml_request(latest_user_message),
-        required_ml_artifacts=_collect_required_ml_artifacts(latest_user_message),
-        follow_up_message=(
-            _build_follow_up_context_message(
-                dataset_id,
-                latest_user_message,
-                force_follow_up=legacy_route.is_follow_up,
-            )
-            if dataset_id
-            else None
-        ),
         final_branch=final_branch,
         history_message_count=compressed.history_message_count,
         compressed_history_count=compressed.compressed_history_count,
@@ -516,10 +336,8 @@ async def create_chat_stream_response(
             "request_id": get_request_id(),
             "dataset_id": requirements.dataset_id,
             "message_preview": requirements.latest_user_message[:80],
-            "intent_type": requirements.legacy_route.intent_type,
-            "intent_confidence": requirements.legacy_route.confidence,
-            "intent_conflict_flags": requirements.legacy_route.conflict_flags,
-            "intent_route_source": requirements.legacy_route.route_source,
+            "primary_mode": requirements.routing_decision.primary_mode,
+            "route_source": requirements.routing_decision.route_source,
             "history_message_count": requirements.history_message_count,
             "compressed_history_count": requirements.compressed_history_count,
             "artifact_refs_count": requirements.artifact_refs_count,

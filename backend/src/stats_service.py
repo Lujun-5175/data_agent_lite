@@ -96,15 +96,17 @@ class DataHelperAPI:
 class StatsHelperAPI:
     """Comprehensive statistical analysis API exposed to the LLM."""
 
+    MAX_AUTO_NUMERIC_COLUMNS = 20
+    MAX_AUTO_CATEGORICAL_COLUMNS = 20
+    MAX_CORR_COLUMNS = 12
+    MAX_TOP_PAIRS = 20
+    MAX_GROUP_ROWS = 500
+    DEFAULT_GROUP_TOP_N = 10
+
     def __init__(self, df: pd.DataFrame, *, dataset_id: str | None):
         self._df = df
         self._dataset_id = dataset_id
-        self.MAX_AUTO_NUMERIC_COLUMNS = 20
-        self.MAX_AUTO_CATEGORICAL_COLUMNS = 20
-        self.MAX_CORR_COLUMNS = 12
-        self.MAX_TOP_PAIRS = 20
-        self.MAX_GROUP_ROWS = 500
-        self.DEFAULT_GROUP_TOP_N = 10
+        # Override defaults from settings if available
         from src.settings import SETTINGS as _s
         self.MAX_AUTO_NUMERIC_COLUMNS = _s.max_auto_numeric_columns
         self.MAX_AUTO_CATEGORICAL_COLUMNS = _s.max_auto_categorical_columns
@@ -129,6 +131,71 @@ class StatsHelperAPI:
 
     def _records(self, df: pd.DataFrame) -> list[dict[str, Any]]:
         return df.replace({np.nan: None}).to_dict(orient="records")
+
+    def _safe_float(self, value: Any) -> float | None:
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return None
+        return float(value)
+
+    def _interpret_p_value(self, p_value: float | None) -> str:
+        if p_value is None:
+            return "Insufficient samples to stably determine statistical significance."
+        if p_value < 0.05:
+            return "Difference/association is statistically significant (p < 0.05)."
+        return "No significant difference/association observed (p >= 0.05)."
+
+    def chi_square(self, col_a: str, col_b: str) -> dict[str, Any]:
+        self._validate_columns([col_a, col_b])
+        contingency = pd.crosstab(self._df[col_a], self._df[col_b], dropna=False)
+        if contingency.empty:
+            raise SafeExecutionError("Chi-square test failed: no usable data after grouping.")
+        chi2, p_value, dof, expected = scipy_stats.chi2_contingency(contingency)
+        warnings: list[str] = []
+        if (expected < 5).any():
+            warnings.append("Some expected frequencies are less than 5. Chi-square test assumptions are weak. Interpret with caution.")
+        artifact = build_artifact(
+            artifact_type="test_result", dataset_id=self._dataset_id,
+            payload={
+                "test_type": "chi_square", "col_a": col_a, "col_b": col_b,
+                "statistic": self._safe_float(chi2), "p_value": self._safe_float(p_value),
+                "dof": int(dof), "interpretation": self._interpret_p_value(p_value),
+                "contingency_rows": self._records(contingency.reset_index()),
+            }, warnings=warnings,
+        )
+        return get_artifact_repository().register(self._dataset_id, artifact)
+
+    def anova(self, value_col: str, group_col: str) -> dict[str, Any]:
+        self._validate_columns([value_col, group_col])
+        if not pd.api.types.is_numeric_dtype(self._df[value_col]):
+            raise SafeExecutionError(f"ANOVA only supports numeric columns: {value_col}")
+        subset = self._df[[value_col, group_col]].dropna()
+        grouped: list[pd.Series] = []
+        means: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        for group_name, frame in subset.groupby(group_col, dropna=False):
+            values = pd.to_numeric(frame[value_col], errors="coerce").dropna()
+            if values.empty:
+                continue
+            grouped.append(values)
+            means.append({"group": self._convert_scalar(group_name), "size": int(len(values.index)), "mean": self._safe_float(values.mean())})
+            if len(values.index) < 2:
+                warnings.append(f"Group {group_name} sample size < 2, results may be unstable.")
+        if len(grouped) < 3:
+            raise SafeExecutionError("ANOVA requires at least 3 valid groups.")
+        statistic, p_value = scipy_stats.f_oneway(*grouped)
+        artifact = build_artifact(
+            artifact_type="test_result", dataset_id=self._dataset_id,
+            payload={
+                "test_type": "anova", "value_col": value_col, "group_col": group_col,
+                "statistic": self._safe_float(statistic), "p_value": self._safe_float(p_value),
+                "group_stats": means, "interpretation": self._interpret_p_value(p_value),
+            }, warnings=warnings,
+        )
+        return get_artifact_repository().register(self._dataset_id, artifact)
+
+    def latest(self, artifact_type: str | None = None) -> dict[str, Any]:
+        result = get_artifact_repository().get_latest(self._dataset_id, artifact_type=artifact_type)
+        return result or {}
 
     def describe_numeric(self, columns: list[str] | None = None) -> dict[str, Any]:
         if columns:

@@ -35,9 +35,9 @@ def set_current_dataset_id(dataset_id: str | None) -> None:
 def get_current_dataset_id() -> str | None:
     return CURRENT_DATASET_ID.get()
 
+@contextlib.contextmanager
 def bind_current_dataset_id(dataset_id: str | None):
-    from contextvars import Token as CvToken
-    token: CvToken = CURRENT_DATASET_ID.set(dataset_id)
+    token = CURRENT_DATASET_ID.set(dataset_id)
     try:
         yield
     finally:
@@ -209,9 +209,11 @@ class _StdoutCollector:
     def flush(self) -> None:
         pass
 
+@contextlib.contextmanager
 def _execution_timeout(seconds: float):
     if platform.system() == "Windows":
-        return contextlib.nullcontext()
+        yield
+        return
     def _handler(signum: int, frame: Any) -> None:
         raise ToolExecutionTimeoutError(seconds)
     signal.signal(signal.SIGALRM, _handler)

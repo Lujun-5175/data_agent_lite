@@ -33,6 +33,7 @@ from src.data_manager import (
 )
 from src.errors import AppError
 from src.ml_helpers import BaselineMLService, MLHelperError, MLHelperAPI
+from src.request_context import get_route_diagnostics
 from src.self_correction import build_repair_prompt, classify_execution_error
 from src.result_types import build_artifact, get_artifact_repository
 from src.settings import SETTINGS

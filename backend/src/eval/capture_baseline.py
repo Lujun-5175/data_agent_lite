@@ -29,7 +29,6 @@ from src.eval.prediction_adapter import (
 from src.eval.runner import load_eval_cases
 from src.eval.schema import EvalCase, EvalPrediction
 from src.result_normalizer import normalize_result_payload, summarize_tool_output
-from src.routing_rules import RoutingContext, interpret_request
 from src.sse import extract_text_from_chunk
 
 LIVE_KEY_ERROR = "DEEPSEEK_API_KEY is required for --mode live"
@@ -660,11 +659,10 @@ def _looks_like_statistical_python(code: str) -> bool:
 
 
 def _build_router_prediction(case: EvalCase) -> EvalPrediction:
-    interpretation = interpret_request(RoutingContext(message=case.user_query), use_llm=False)
-    predicted_tool, predicted_args = _router_plan(case, interpretation)
+    predicted_tool, predicted_args = _router_plan(case)
     return EvalPrediction(
         case_id=case.case_id,
-        predicted_intent=_router_intent(case, interpretation, predicted_tool, predicted_args),
+        predicted_intent=None,
         predicted_tool=predicted_tool,
         predicted_args=predicted_args,
         execution_status=_router_execution_status(case, predicted_tool, predicted_args),
@@ -673,11 +671,11 @@ def _build_router_prediction(case: EvalCase) -> EvalPrediction:
     )
 
 
-def _router_plan(case: EvalCase, interpretation) -> tuple[str | None, dict[str, Any] | None]:
+def _router_plan(case: EvalCase) -> tuple[str | None, dict[str, Any] | None]:
     query = case.user_query.lower()
     if case.should_be_blocked or any(token in query for token in ("import os", "read a local file", "write code", "export the dataframe")):
         return "python_inter", _router_python_args(case.user_query)
-    if "model" in query or interpretation.intent_type == "ml" or case.expected_tool == "ml_execute":
+    if "model" in query or case.expected_tool == "ml_execute":
         if "feature importance" in query or "重要特征" in query:
             return "ml_execute", {"action": "feature_importance", "top_k": 5}
         if "metrics" in query or "指标" in query:
@@ -692,7 +690,7 @@ def _router_plan(case: EvalCase, interpretation) -> tuple[str | None, dict[str, 
     return "python_inter", _router_python_args(case.user_query)
 
 
-def _router_intent(case: EvalCase, interpretation, predicted_tool: str | None, predicted_args: dict[str, Any] | None) -> str | None:
+def _router_intent(case: EvalCase, predicted_tool: str | None, predicted_args: dict[str, Any] | None) -> str | None:
     if predicted_tool == "ml_execute":
         return "ml_training"
     if predicted_tool == "stats_execute":

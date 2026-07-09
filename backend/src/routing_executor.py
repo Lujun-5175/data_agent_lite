@@ -11,19 +11,15 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from src.agent import AgentContext, _format_dataset_context_summary
 from src.data_manager import get_data_context_summary, get_dataset, get_dataset_recommended_prompts
 from src.errors import AppError
-from src.plan_executor import execute_task_plan, supports_task_plan
-from src.plan_verifier import verify_task_plan
 from src.request_context import get_request_id, set_degradation_mode, set_failure_stage
 from src.result_types import get_artifact_repository
 from src.routing_models import RoutingDecision
-from src.routing_projection import build_route_info_payload
 from src.settings import SETTINGS
 from src.sse import backend_image_url, build_streaming_response, extract_text_from_chunk, format_sse
 from src.tools import bind_current_dataset_id, consume_current_image_event
 
 logger = logging.getLogger(__name__)
 
-ML_RESULT_ARTIFACT_TYPES = {"model_result", "metrics_result", "feature_importance_result"}
 ML_DIRECT_TOOL_NAMES = {"ml_execute"}
 
 
@@ -86,19 +82,11 @@ def resolve_final_branch(
     *,
     dataset_id: str | None,
     routing_decision: RoutingDecision,
-    task_plan: Any | None = None,
+    **kwargs: Any,
 ) -> str:
     if not dataset_id:
         return "general_chat"
-    if routing_decision.primary_mode == "dataset_overview":
-        return "dataset_overview"
-    if routing_decision.primary_mode == "clarification":
-        return "clarification"
-    if routing_decision.primary_mode == "direct_answer" and not routing_decision.needs_tool_execution:
-        return "direct_answer"
-    if supports_task_plan(task_plan):
-        return "plan_execution"
-    return "agent_graph"
+    return routing_decision.primary_mode
 
 
 def build_dataset_overview_reply(dataset: object, *, recommended_prompts: list[str]) -> str:
@@ -198,9 +186,11 @@ async def generate_dataset_direct_reply(
 ) -> str:
     dataset_summary = _format_dataset_context_summary(get_data_context_summary(dataset_id))
     helper_message = (
-        "The current question is better suited for direct answering。Only reference the dataset summary below when necessary，Do not fabricate statistics that were not provided。\n"
+        "The current question is better suited for direct answering. Only reference the dataset summary below when necessary, "
+        "Do not fabricate statistics that were not provided.\n"
         if not clarification
-        else "Current information is insufficient to safely perform data analysis。Based on the dataset summary below，Clearly state what information is missing，and suggest minimal viable clarifying questions。\n"
+        else "Current information is insufficient to safely perform data analysis. Based on the dataset summary below, "
+        "Clearly state what information is missing, and suggest minimal viable clarifying questions.\n"
     )
     contextual_messages = [
         {
@@ -292,64 +282,6 @@ def _extract_tool_error_payload(text: str) -> dict[str, Any] | None:
     return payload
 
 
-def _looks_like_internal_intent_payload(text: str) -> bool:
-    stripped = text.strip()
-    if not stripped.startswith("{"):
-        return False
-    try:
-        payload = json.loads(stripped)
-    except Exception:
-        return False
-    if not isinstance(payload, dict):
-        return False
-    intent_keys = {
-        "intent_type",
-        "is_dataset_overview",
-        "is_follow_up",
-        "requires_ml",
-        "requires_chart",
-        "requires_python_analysis",
-        "confidence",
-        "conflict_flags",
-        "route_source",
-        "reasoning_summary",
-        "suggested_plan",
-    }
-    return "intent_type" in payload and len(intent_keys.intersection(payload)) >= 3
-
-
-def _strip_internal_intent_payload_prefix(text: str) -> str:
-    stripped = text.lstrip()
-    if not stripped.startswith("{"):
-        return text
-
-    depth = 0
-    in_string = False
-    escaped = False
-    for index, char in enumerate(stripped):
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-        elif char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                candidate = stripped[: index + 1]
-                if _looks_like_internal_intent_payload(candidate):
-                    return stripped[index + 1 :].lstrip()
-                return text
-    return text
-
-
 def _raise_tool_error(payload: dict[str, Any]) -> None:
     message = payload.get("message")
     error_code = payload.get("error_code")
@@ -370,7 +302,7 @@ def _check_loop_guard(loop_guard: LoopGuardState) -> None:
     if loop_guard.total_steps > SETTINGS.agent_max_total_steps:
         raise AppError(
             "agent_recursion_limit",
-            "Task is too complex，Execution steps have reached the limit。Please break it down into more specific sub-questions。",
+            "Task is too complex, Execution steps have reached the limit. Please break it down into more specific sub-questions.",
             500,
             stage="agent_loop",
         )
@@ -390,32 +322,6 @@ def _check_loop_guard(loop_guard: LoopGuardState) -> None:
         )
 
 
-def _validate_stream_outcome(requirements: Any, outcome: StreamOutcome) -> None:
-    if requirements.explicit_ml_request and not outcome.saw_ml_tool_call:
-        raise AppError(
-            "structured_failure",
-            "This modeling request did not call a direct ml tool. Please use ml_execute to complete modeling first.",
-            200,
-            stage="validation",
-        )
-    if requirements.explicit_ml_request:
-        missing_ml_artifacts = requirements.required_ml_artifacts - outcome.produced_ml_artifact_types
-        if missing_ml_artifacts:
-            raise AppError(
-                "structured_failure",
-                f"This modeling request is missing structured results: {', '.join(sorted(missing_ml_artifacts))}。",
-                200,
-                stage="validation",
-            )
-    if requirements.chart_requested and not outcome.saw_chart_image:
-        raise AppError(
-            "structured_failure",
-            "This chart request did not generate a displayable image. Please check field names or chart description and retry.",
-            200,
-            stage="validation",
-        )
-
-
 async def _stream_graph_attempt(
     request: Request,
     *,
@@ -427,14 +333,12 @@ async def _stream_graph_attempt(
     dependencies: ExecutorDependencies,
 ) -> tuple[list[str], StreamOutcome]:
     set_failure_stage("model_stream")
-    runtime_context = AgentContext(
-        dataset_id=dataset_id,
-        routing_decision=requirements.routing_decision.model_dump(),
-    )
+    runtime_context = AgentContext(dataset_id=dataset_id)
     last_seen_artifact_id, _ = _get_latest_artifact_info(dataset_id)
     outcome = StreamOutcome(buffered_text_chunks=[])
     emitted_events: list[str] = []
     loop_guard = LoopGuardState()
+
     async for event in graph.astream_events(
         {"messages": messages_for_graph},
         config={"configurable": {"dataset_id": dataset_id}, "recursion_limit": recursion_limit},
@@ -445,44 +349,16 @@ async def _stream_graph_attempt(
         data = event.get("data") or {}
         name = event.get("name")
         if event_name == "on_tool_start":
-            loop_guard.register_tool_start(_build_tool_signature(str(name) if isinstance(name, str) else None, data))
+            loop_guard.register_tool_start(
+                _build_tool_signature(
+                    str(name) if isinstance(name, str) else None,
+                    data,
+                )
+            )
             _check_loop_guard(loop_guard)
             if isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
                 outcome.saw_ml_tool_call = True
 
-        if event_name == "on_chain_stream":
-            continue
-
-        if event_name == "on_chat_model_stream":
-            chunk = data.get("chunk") if isinstance(data, dict) else None
-            text = _strip_internal_intent_payload_prefix(extract_text_from_chunk(chunk))
-            if _looks_like_internal_intent_payload(text) or not text:
-                continue
-            tool_error_payload = _extract_tool_error_payload(text)
-            if tool_error_payload is not None:
-                outcome.tool_error_payload = tool_error_payload
-                continue
-            loop_guard.register_text_progress()
-            outcome.emitted_text_chunk_count += 1
-            if requirements.explicit_ml_request or requirements.chart_requested:
-                outcome.buffered_text_chunks.append(text)
-                artifact_type = _extract_structured_artifact_type(text)
-                if artifact_type in ML_RESULT_ARTIFACT_TYPES:
-                    current_artifact = get_artifact_repository().get_latest(dataset_id, artifact_type=artifact_type)
-                    current_artifact_id = current_artifact.get("artifact_id") if current_artifact else None
-                    if current_artifact_id and current_artifact_id != last_seen_artifact_id:
-                        outcome.produced_ml_artifact_types.add(str(artifact_type))
-                        loop_guard.register_artifact_progress()
-            else:
-                emitted_events.append(
-                    format_sse(
-                        "message_chunk",
-                        dependencies.build_event_payload({"content": text}, dataset_id=dataset_id),
-                    )
-                )
-            continue
-
-        if event_name == "on_tool_start":
             emitted_events.append(
                 format_sse(
                     "tool_start",
@@ -491,17 +367,36 @@ async def _stream_graph_attempt(
             )
             continue
 
+        if event_name == "on_chain_stream":
+            continue
+
+        if event_name == "on_chat_model_stream":
+            chunk = data.get("chunk") if isinstance(data, dict) else None
+            text = extract_text_from_chunk(chunk)
+            if not text:
+                continue
+            tool_error_payload = _extract_tool_error_payload(text)
+            if tool_error_payload is not None:
+                outcome.tool_error_payload = tool_error_payload
+                continue
+            loop_guard.register_text_progress()
+            outcome.emitted_text_chunk_count += 1
+            emitted_events.append(
+                format_sse(
+                    "message_chunk",
+                    dependencies.build_event_payload({"content": text}, dataset_id=dataset_id),
+                )
+            )
+            continue
+
         if event_name == "on_tool_end":
             if outcome.tool_error_payload is not None:
                 _raise_tool_error(outcome.tool_error_payload)
-            current_artifact_id, current_artifact_type = _get_latest_artifact_info(dataset_id)
+
+            current_artifact_id, _ = _get_latest_artifact_info(dataset_id)
             if current_artifact_id and current_artifact_id != last_seen_artifact_id:
                 loop_guard.register_artifact_progress()
                 last_seen_artifact_id = current_artifact_id
-                if current_artifact_type in ML_RESULT_ARTIFACT_TYPES:
-                    outcome.produced_ml_artifact_types.add(str(current_artifact_type))
-            elif isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES and current_artifact_type in ML_RESULT_ARTIFACT_TYPES:
-                outcome.produced_ml_artifact_types.add(str(current_artifact_type))
 
             emitted_events.append(
                 format_sse(
@@ -532,14 +427,6 @@ async def _stream_graph_attempt(
             loop_guard.register_tool_end()
             _check_loop_guard(loop_guard)
 
-    _validate_stream_outcome(requirements, outcome)
-    for text in outcome.buffered_text_chunks:
-        emitted_events.append(
-            format_sse(
-                "message_chunk",
-                dependencies.build_event_payload({"content": text}, dataset_id=dataset_id),
-            )
-        )
     return emitted_events, outcome
 
 
@@ -551,21 +438,19 @@ def execute_chat_stream_response(
     dependencies: ExecutorDependencies,
 ) -> Any:
     dataset_id = requirements.dataset_id
-    route_info_payload = build_route_info_payload(
-        requirements.routing_decision,
-        final_branch=requirements.final_branch,
-        task_plan=requirements.task_plan,
-        task_plan_attempted=requirements.task_plan_attempted,
-        task_plan_generation_failed=requirements.task_plan_generation_failed,
-    )
+    route_info_payload = {
+        "primary_mode": requirements.routing_decision.primary_mode,
+        "needs_dataset": bool(dataset_id),
+        "reasoning_summary": getattr(requirements.routing_decision, "reasoning_summary", None),
+        "execution_plan": getattr(requirements.routing_decision, "execution_plan", None),
+    }
 
     if not dataset_id:
 
         async def general_chat_event_generator():
             attempts = [
                 ("none", requirements.compressed_messages),
-                ("retry_stream_once", requirements.compressed_messages),
-                ("non_stream_simple_mode", requirements.simple_mode_messages),
+                ("retry_once", requirements.compressed_messages),
             ]
             yield format_sse("route_info", dependencies.build_event_payload(route_info_payload))
             for index, (mode, messages_for_reply) in enumerate(attempts):
@@ -587,8 +472,8 @@ def execute_chat_stream_response(
                             "degradation_mode": mode,
                             "error_code": mapped_error.code,
                             "failure_stage": mapped_error.stage,
-                            "intent_confidence": requirements.legacy_route.confidence,
-                            "intent_route_source": requirements.legacy_route.route_source,
+                            "primary_mode": requirements.routing_decision.primary_mode,
+                            "route_source": getattr(requirements.routing_decision, "route_source", None),
                         },
                     )
                     if mapped_error.retryable and index < len(attempts) - 1:
@@ -632,8 +517,7 @@ def execute_chat_stream_response(
             with bind_current_dataset_id(dataset_id):
                 attempts = [
                     ("none", requirements.compressed_messages),
-                    ("retry_stream_once", requirements.compressed_messages),
-                    ("non_stream_simple_mode", requirements.simple_mode_messages),
+                    ("retry_once", requirements.compressed_messages),
                 ]
                 yield format_sse(
                     "route_info",
@@ -668,7 +552,7 @@ def execute_chat_stream_response(
                                 "error_code": mapped_error.code,
                                 "failure_stage": mapped_error.stage,
                                 "primary_mode": requirements.routing_decision.primary_mode,
-                                "intent_route_source": requirements.legacy_route.route_source,
+                                "route_source": getattr(requirements.routing_decision, "route_source", None),
                             },
                         )
                         if mapped_error.retryable and index < len(attempts) - 1:
@@ -679,126 +563,11 @@ def execute_chat_stream_response(
 
         return build_streaming_response(dataset_direct_event_generator())
 
-    if requirements.final_branch == "plan_execution":
-
-        async def plan_execution_event_generator():
-            with bind_current_dataset_id(dataset_id):
-                yield format_sse(
-                    "route_info",
-                    dependencies.build_event_payload(route_info_payload, dataset_id=dataset_id),
-                )
-                try:
-                    active_task_plan = requirements.executable_task_plan or requirements.task_plan
-                    result = execute_task_plan(dataset_id=dataset_id, task_plan=active_task_plan)
-                    verification = verify_task_plan(
-                        task_plan=active_task_plan,
-                        executed_task_ids=result.executed_task_ids,
-                        produced_outputs=result.produced_outputs,
-                    )
-                    if verification.status != "success":
-                        raise AppError(
-                            "task_plan_incomplete",
-                            verification.reason or "Structured plan was not fully executed.",
-                            200,
-                            stage="plan_verification",
-                        )
-                    if result.content.strip():
-                        yield format_sse(
-                            "message_chunk",
-                            dependencies.build_event_payload({"content": result.content}, dataset_id=dataset_id),
-                        )
-                    yield dependencies.build_done_sse(dataset_id=dataset_id)
-                    return
-                except AppError as exc:
-                    if exc.code != "unsupported_task_plan":
-                        yield dependencies.build_error_sse(exc, dataset_id=dataset_id)
-                        yield dependencies.build_done_sse(dataset_id=dataset_id)
-                        return
-
-            async for event in event_generator():
-                yield event
-
-        async def event_generator():
-            with bind_current_dataset_id(dataset_id):
-                attempts = [
-                    ("none", requirements.messages_for_graph, SETTINGS.agent_default_recursion_limit),
-                    ("retry_stream_once", requirements.messages_for_graph, SETTINGS.agent_default_recursion_limit),
-                    ("non_stream_simple_mode", requirements.simple_messages_for_graph, SETTINGS.agent_simple_mode_recursion_limit),
-                ]
-                try:
-                    for index, (mode, messages_for_graph, recursion_limit) in enumerate(attempts):
-                        try:
-                            set_degradation_mode(mode)
-                            events, _ = await _stream_graph_attempt(
-                                request,
-                                graph=graph,
-                                requirements=requirements,
-                                dataset_id=dataset_id,
-                                messages_for_graph=messages_for_graph,
-                                recursion_limit=recursion_limit,
-                                dependencies=dependencies,
-                            )
-                            for event in events:
-                                yield event
-                            yield dependencies.build_done_sse(dataset_id=dataset_id)
-                            return
-                        except Exception as exc:
-                            mapped_error = dependencies.classify_stream_exception(exc)
-                            set_failure_stage(mapped_error.stage)
-                            logger.exception(
-                                "chat stream failed",
-                                extra={
-                                    "request_id": get_request_id(),
-                                    "dataset_id": dataset_id,
-                                    "degradation_mode": mode,
-                                    "history_message_count": requirements.history_message_count,
-                                    "compressed_history_count": requirements.compressed_history_count,
-                                    "artifact_refs_count": requirements.artifact_refs_count,
-                                    "intent_type": requirements.legacy_route.intent_type,
-                                    "intent_confidence": requirements.legacy_route.confidence,
-                                    "intent_conflict_flags": requirements.legacy_route.conflict_flags,
-                                    "intent_route_source": requirements.legacy_route.route_source,
-                                    "failure_stage": mapped_error.stage,
-                                    "error_code": mapped_error.code,
-                                    "attempt": index,
-                                },
-                            )
-                            if mapped_error.retryable and index < len(attempts) - 1:
-                                continue
-                            if mapped_error.code == "agent_recursion_limit" and index < len(attempts) - 1:
-                                continue
-                            yield dependencies.build_error_sse(mapped_error, dataset_id=dataset_id)
-                            yield dependencies.build_done_sse(dataset_id=dataset_id)
-                            return
-                except AppError as exc:
-                    set_failure_stage(exc.stage or "unknown")
-                    yield dependencies.build_error_sse(exc, dataset_id=dataset_id)
-                    yield dependencies.build_done_sse(dataset_id=dataset_id)
-                except Exception as exc:
-                    mapped_error = dependencies.classify_stream_exception(exc)
-                    set_failure_stage(mapped_error.stage)
-                    logger.exception(
-                        "chat stream failed",
-                        extra={
-                            "request_id": get_request_id(),
-                            "dataset_id": dataset_id,
-                            "failure_stage": mapped_error.stage,
-                            "error_code": mapped_error.code,
-                            "intent_confidence": requirements.legacy_route.confidence,
-                            "intent_route_source": requirements.legacy_route.route_source,
-                        },
-                    )
-                    yield dependencies.build_error_sse(mapped_error, dataset_id=dataset_id)
-                    yield dependencies.build_done_sse(dataset_id=dataset_id)
-
-        return build_streaming_response(plan_execution_event_generator())
-
     async def event_generator():
         with bind_current_dataset_id(dataset_id):
             attempts = [
-                ("none", requirements.messages_for_graph, SETTINGS.agent_default_recursion_limit),
-                ("retry_stream_once", requirements.messages_for_graph, SETTINGS.agent_default_recursion_limit),
-                ("non_stream_simple_mode", requirements.simple_messages_for_graph, SETTINGS.agent_simple_mode_recursion_limit),
+                ("none", requirements.compressed_messages, SETTINGS.agent_default_recursion_limit),
+                ("retry_once", requirements.compressed_messages, SETTINGS.agent_default_recursion_limit),
             ]
             try:
                 yield format_sse(
@@ -833,12 +602,10 @@ def execute_chat_stream_response(
                                 "history_message_count": requirements.history_message_count,
                                 "compressed_history_count": requirements.compressed_history_count,
                                 "artifact_refs_count": requirements.artifact_refs_count,
-                                "intent_type": requirements.legacy_route.intent_type,
-                                "intent_confidence": requirements.legacy_route.confidence,
-                                "intent_conflict_flags": requirements.legacy_route.conflict_flags,
-                                "intent_route_source": requirements.legacy_route.route_source,
                                 "failure_stage": mapped_error.stage,
                                 "error_code": mapped_error.code,
+                                "primary_mode": requirements.routing_decision.primary_mode,
+                                "route_source": getattr(requirements.routing_decision, "route_source", None),
                                 "attempt": index,
                             },
                         )
@@ -863,8 +630,8 @@ def execute_chat_stream_response(
                         "dataset_id": dataset_id,
                         "failure_stage": mapped_error.stage,
                         "error_code": mapped_error.code,
-                        "intent_confidence": requirements.legacy_route.confidence,
-                        "intent_route_source": requirements.legacy_route.route_source,
+                        "primary_mode": requirements.routing_decision.primary_mode,
+                        "route_source": getattr(requirements.routing_decision, "route_source", None),
                     },
                 )
                 yield dependencies.build_error_sse(mapped_error, dataset_id=dataset_id)

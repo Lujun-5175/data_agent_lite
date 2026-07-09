@@ -12,12 +12,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from src.data_manager import get_data_context_summary, get_dataset
-from src.routing_rules import (
-    RoutingContext,
-    decide_dataset_required,
-    decide_ml_intent,
-    decide_stats_intent,
-)
 from src.settings import SETTINGS
 from src.tools import (
     bind_current_dataset_id,
@@ -150,11 +144,6 @@ def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
         return "No pre-injected routing_decision. Proceed with minimal necessary steps."
 
     primary_mode = str(routing_decision.get("primary_mode", "")).strip()
-    requested_capabilities = {
-        str(capability).strip()
-        for capability in routing_decision.get("requested_capabilities", [])
-        if isinstance(capability, str) and capability.strip()
-    }
 
     if primary_mode == "dataset_overview":
         return "This is a dataset overview request. Prefer explaining based on current schema/profile directly. Avoid unnecessary tool loops."
@@ -163,22 +152,12 @@ def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
             "This is a clear modeling request. Take minimal necessary steps. "
             "Only call `ml_execute` when training, evaluation, or feature importance is actually needed."
         )
-    if primary_mode == "mixed":
-        return (
-            "This is a mixed workflow. Execute the analysis part first, then decide if `ml_execute` is needed. "
-            "Do not escalate exploratory analysis into modeling."
-        )
     if primary_mode == "visualization":
         return "This is a visualization request. Do minimal analysis first, then use `fig_inter` to generate the chart."
-    if primary_mode == "artifact_followup":
-        return "This is a follow-up request. Prefer reusing recent structured artifacts. Supplement with analysis or ML only if needed."
     if primary_mode == "clarification":
         return "Insufficient information. Prioritize clarifying the user's missing filters, target columns, or expected output. Do not enter complex tool loops directly."
     if primary_mode == "direct_answer":
         return "This is a direct answer request requiring no complex tools. Respond concisely. Only enter analytical workflow when truly necessary."
-
-    if requested_capabilities.intersection({"stat_test", "group_analysis", "python_analysis"}):
-        return "Statistical/exploratory intent detected. Prefer stats_execute or python_inter. Avoid unnecessary modeling."
 
     return (
         "Select minimal necessary tools based on routing_decision. "
@@ -244,48 +223,14 @@ def _format_dataset_context_summary(summary: dict[str, Any]) -> str:
         f"Key warnings: {_format_columns(warnings, 3)}"
     )
 
-def get_dataset_required_decision(
-    message: str,
-    *,
-    dataset_columns: list[str] | None = None,
-    prior_analysis_active: bool = False,
-):
-    return decide_dataset_required(
-        RoutingContext(
-            message=message,
-            dataset_columns=dataset_columns or [],
-            prior_analysis_active=prior_analysis_active,
-        )
-    )
-
-
 def is_dataset_required(
     message: str,
     *,
     dataset_columns: list[str] | None = None,
     prior_analysis_active: bool = False,
 ) -> bool:
-    decision = get_dataset_required_decision(
-        message,
-        dataset_columns=dataset_columns,
-        prior_analysis_active=prior_analysis_active,
-    )
-    return decision.matched
-
-
-def get_stats_intent_decision(
-    message: str,
-    *,
-    dataset_columns: list[str] | None = None,
-    prior_analysis_active: bool = False,
-):
-    return decide_stats_intent(
-        RoutingContext(
-            message=message,
-            dataset_columns=dataset_columns or [],
-            prior_analysis_active=prior_analysis_active,
-        )
-    )
+    # Deprecated: no longer used for routing. LLM handles dataset requirement.
+    return False
 
 
 def is_stats_intent(
@@ -294,27 +239,8 @@ def is_stats_intent(
     dataset_columns: list[str] | None = None,
     prior_analysis_active: bool = False,
 ) -> bool:
-    decision = get_stats_intent_decision(
-        message,
-        dataset_columns=dataset_columns,
-        prior_analysis_active=prior_analysis_active,
-    )
-    return decision.matched
-
-
-def get_ml_intent_decision(
-    message: str,
-    *,
-    dataset_columns: list[str] | None = None,
-    prior_analysis_active: bool = False,
-):
-    return decide_ml_intent(
-        RoutingContext(
-            message=message,
-            dataset_columns=dataset_columns or [],
-            prior_analysis_active=prior_analysis_active,
-        )
-    )
+    # Deprecated: no longer used for routing. LLM handles intent detection.
+    return False
 
 
 def is_ml_intent(
