@@ -188,6 +188,14 @@ def _classify_stream_exception(exc: Exception) -> AppError:
             stage="model_stream",
         )
     detail = _clean_exception_message(exc)
+    if isinstance(exc, ValueError) and "not enough values to unpack" in detail:
+        return AppError(
+            "upstream_model_parse_error",
+            "DeepSeek API returned an unexpected streaming response format. Please try again.",
+            500,
+            retryable=True,
+            stage="model_stream",
+        )
     message = "Internal server error. Please try again later."
     if detail:
         message = f"Model call failed: {detail}"
