@@ -936,7 +936,7 @@ def _coerce_tool_args(
     if isinstance(parsed, dict):
         return parsed
     if isinstance(input_str, str) and input_str.strip():
-        if tool_name in {"python_inter", "fig_inter"}:
+        if tool_name in {"python_inter"}:
             return {"py_code": input_str.strip()}
         return input_str.strip()
     return None

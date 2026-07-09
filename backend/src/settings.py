@@ -63,8 +63,6 @@ class AppSettings:
     ml_max_ohe_categories: int = _get_int("ML_MAX_OHE_CATEGORIES", 30)
     python_execution_timeout_base_seconds: float = float(os.getenv("PYTHON_EXECUTION_TIMEOUT_BASE_SECONDS", "4.0"))
     python_execution_timeout_max_seconds: float = float(os.getenv("PYTHON_EXECUTION_TIMEOUT_MAX_SECONDS", "9.0"))
-    plot_execution_timeout_base_seconds: float = float(os.getenv("PLOT_EXECUTION_TIMEOUT_BASE_SECONDS", "6.0"))
-    plot_execution_timeout_max_seconds: float = float(os.getenv("PLOT_EXECUTION_TIMEOUT_MAX_SECONDS", "12.0"))
     safe_exec_max_ast_nodes: int = _get_int("SAFE_EXEC_MAX_AST_NODES", 1500)
     safe_exec_max_loop_nesting: int = _get_int("SAFE_EXEC_MAX_LOOP_NESTING", 3)
     safe_exec_max_comprehension_nesting: int = _get_int("SAFE_EXEC_MAX_COMPREHENSION_NESTING", 3)

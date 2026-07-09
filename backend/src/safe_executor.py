@@ -14,9 +14,7 @@ import time
 from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any, Literal
-from uuid import uuid4
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -27,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # ── Context vars ──────────────────────────────────────────────
 CURRENT_DATASET_ID: ContextVar[str | None] = ContextVar("current_dataset_id", default=None)
-CURRENT_IMAGE_EVENT_STATE: ContextVar[dict[str, Any] | None] = ContextVar("current_image_event_state", default=None)
 
 def set_current_dataset_id(dataset_id: str | None) -> None:
     CURRENT_DATASET_ID.set(dataset_id)
@@ -43,21 +40,13 @@ def bind_current_dataset_id(dataset_id: str | None):
     finally:
         CURRENT_DATASET_ID.reset(token)
 
-def consume_current_image_event() -> dict[str, Any] | None:
-    event = CURRENT_IMAGE_EVENT_STATE.get()
-    CURRENT_IMAGE_EVENT_STATE.set(None)
-    return event
-
-def set_current_image_event(event: dict[str, Any] | None) -> None:
-    CURRENT_IMAGE_EVENT_STATE.set(event)
-
 # ── Security constants ────────────────────────────────────────
 ALLOWED_BUILTINS = {
     "abs": abs, "all": all, "any": any, "bool": bool,
-    "dict": dict, "enumerate": enumerate, "float": float,
+    "dict": dict, "dir": dir, "enumerate": enumerate, "float": float,
     "int": int, "len": len, "list": list, "max": max, "min": min,
     "print": print, "range": range, "round": round, "set": set,
-    "sorted": sorted, "str": str, "sum": sum, "tuple": tuple, "zip": zip,
+    "sorted": sorted, "str": str, "sum": sum, "tuple": tuple, "type": type, "zip": zip,
 }
 
 FORBIDDEN_CALL_NAMES = {
@@ -71,7 +60,7 @@ FORBIDDEN_METHOD_NAMES = {
     "imsave", "load", "loads", "read", "read_csv", "read_excel",
     "read_feather", "read_fwf", "read_hdf", "read_html", "read_json",
     "read_orc", "read_parquet", "read_pickle", "read_sas", "read_spss",
-    "read_sql", "read_stata", "read_table", "read_xml", "plot", "save",
+    "read_sql", "read_stata", "read_table", "read_xml", "save",
     "savefig", "to_excel", "to_clipboard", "to_csv", "to_feather",
     "to_gbq", "to_hdf", "to_html", "to_json", "to_latex", "to_markdown",
     "to_orc", "to_parquet", "to_pickle", "to_sql", "to_stata", "to_xml",
@@ -79,7 +68,7 @@ FORBIDDEN_METHOD_NAMES = {
 }
 
 FORBIDDEN_IDENTIFIERS = {
-    "matplotlib", "np", "os", "pd", "pathlib", "plt",
+    "matplotlib", "os", "pathlib",
     "requests", "seaborn", "shutil", "socket", "subprocess", "sys",
 }
 
@@ -245,6 +234,14 @@ class ReadOnlyDataFrameProxy:
             return _wrapped
         return attr
 
+    def __getitem__(self, key: Any) -> Any:
+        result = self._df[key]
+        if isinstance(result, pd.DataFrame):
+            return ReadOnlyDataFrameProxy(result)
+        if isinstance(result, pd.Series):
+            return ReadOnlySeriesProxy(result)
+        return result
+
     def __setattr__(self, name: str, value: Any) -> None:
         raise SafeExecutionError("DataFrame is read-only. Cannot assign values.")
     def __delitem__(self, key: Any) -> None:
@@ -275,6 +272,27 @@ class ReadOnlySeriesProxy:
             return _wrapped
         return attr
 
+    def __getitem__(self, key: Any) -> Any:
+        result = self._series[key]
+        if isinstance(result, pd.Series):
+            return ReadOnlySeriesProxy(result)
+        return result
+
+    # Comparison operators — delegate to the underlying Series
+    # so that df[df["col"] > 5] works through boolean indexing.
+    def __gt__(self, other: Any) -> pd.Series:
+        return self._series > other
+    def __lt__(self, other: Any) -> pd.Series:
+        return self._series < other
+    def __ge__(self, other: Any) -> pd.Series:
+        return self._series >= other
+    def __le__(self, other: Any) -> pd.Series:
+        return self._series <= other
+    def __eq__(self, other: Any) -> pd.Series:  # type: ignore[override]
+        return self._series == other
+    def __ne__(self, other: Any) -> pd.Series:  # type: ignore[override]
+        return self._series != other
+
     def __setattr__(self, name: str, value: Any) -> None:
         raise SafeExecutionError("Series is read-only. Cannot assign values.")
     def __setitem__(self, key: Any, value: Any) -> None:
@@ -284,126 +302,53 @@ class ReadOnlySeriesProxy:
     def __str__(self) -> str:
         return str(self._series)
 
-# ── Safe Python Executor ─────────────────────────────────────
-class SafePythonExecutor:
-    # This is a constrained execution layer, not an OS-level sandbox.
-    # Keep the policy strict and prefer helper APIs over broad Python objects.
+# ── Safe Python Executor (module-level functions) ───────────
+def safe_execute_python(py_code: str, env: dict[str, Any], *, df: pd.DataFrame | None = None) -> str:
+    compiled = _validate_and_compile(py_code)
+    output: list[str] = []
+    execution_env = _build_env(env)
+    timeout_seconds = _resolve_timeout_seconds(df=df, mode="python")
 
-    def __init__(self, *, image_dir: Path):
-        self.image_dir = image_dir
-
-    def safe_execute_python(self, py_code: str, env: dict[str, Any], *, df: pd.DataFrame | None = None) -> str:
-        compiled = self._validate_and_compile(py_code)
-        output: list[str] = []
-        execution_env = self._build_env(env)
-        timeout_seconds = self._resolve_timeout_seconds(df=df, mode="python")
-
-        try:
-            with contextlib.redirect_stdout(_StdoutCollector(output)):
-                with _execution_timeout(timeout_seconds):
-                    exec(compiled, execution_env, execution_env)
-        except SafeExecutionError:
-            raise
-        except Exception as exc:
-            logger.warning("Safe Python execution failed: %s", exc)
-            return f"Code execution failed: {exc}"
-
-        printed = "".join(output).strip()
-        if printed:
-            return printed
-        return "Code executed successfully, but no output. Use print() to display results."
-
-    def safe_execute_plot(
-        self,
-        py_code: str,
-        env: dict[str, Any],
-        figure_name: str | None = None,
-        *,
-        df: pd.DataFrame | None = None,
-    ) -> str:
-        compiled = self._validate_and_compile(py_code)
-        execution_env = self._build_env(env)
-        timeout_seconds = self._resolve_timeout_seconds(df=df, mode="plot")
-
-        plt.close("all")
-
-        try:
+    try:
+        with contextlib.redirect_stdout(_StdoutCollector(output)):
             with _execution_timeout(timeout_seconds):
                 exec(compiled, execution_env, execution_env)
-        except SafeExecutionError:
-            raise
-        except Exception as exc:
-            logger.warning("Safe plot execution failed: %s", exc)
-            return f"Plot execution failed: {exc}"
+    except SafeExecutionError:
+        raise
+    except Exception as exc:
+        logger.warning("Safe Python execution failed: %s", exc)
+        return f"Code execution failed: {exc}"
 
-        figure = execution_env.get(figure_name) if figure_name else None
-        if figure is None:
-            figure = plt.gcf()
+    printed = "".join(output).strip()
+    if printed:
+        return printed
+    return "Code executed successfully, but no output. Use print() to display results."
 
-        if figure is None:
-            return "Plot code executed, but no image object was generated."
 
-        if hasattr(figure, "figure") and not hasattr(figure, "savefig"):
-            figure = getattr(figure, "figure", figure)
+def _validate_and_compile(py_code: str):
+    try:
+        tree = ast.parse(py_code, mode="exec")
+    except SyntaxError as exc:
+        raise SafeExecutionError(f"Python syntax error: {exc.msg}") from exc
 
-        filename = f"{uuid4().hex}.png"
-        save_path = (self.image_dir / filename).resolve()
-        if save_path.parent != self.image_dir:
-            raise SafeExecutionError("Image save path is invalid.")
-        figure.savefig(save_path, bbox_inches="tight", dpi=100)
-        plt.close("all")
+    SafeCodeValidator().visit(tree)
+    return compile(tree, "<safe-python>", "exec")
 
-        dataset_id = get_current_dataset_id()
-        if dataset_id:
-            from src.data_manager import register_dataset_generated_image
-            register_dataset_generated_image(dataset_id, filename)
 
-        set_current_image_event(
-            {
-                "type": "image_generated",
-                "filename": filename,
-                "tool_name": "fig_inter",
-            }
-        )
-        return "Chart generated"
+def _build_env(env: dict[str, Any]) -> dict[str, Any]:
+    safe_env: dict[str, Any] = {"__builtins__": dict(ALLOWED_BUILTINS)}
+    # Inject pd and np so the model can use them directly without import
+    safe_env["pd"] = pd
+    safe_env["np"] = np
+    safe_env.update(env)
+    return safe_env
 
-    def _validate_and_compile(self, py_code: str):
-        try:
-            tree = ast.parse(py_code, mode="exec")
-        except SyntaxError as exc:
-            raise SafeExecutionError(f"Python syntax error: {exc.msg}") from exc
 
-        SafeCodeValidator().visit(tree)
-        return compile(tree, "<safe-python>", "exec")
+def _resolve_timeout_seconds(*, df: pd.DataFrame | None, mode: Literal["python"]) -> float:
+    row_count = 0 if df is None else int(len(df.index))
+    column_count = 0 if df is None else int(len(df.columns))
+    complexity_bonus = min(4.0, row_count / 4000.0 + column_count / 25.0)
+    base = SETTINGS.python_execution_timeout_base_seconds
+    ceiling = SETTINGS.python_execution_timeout_max_seconds
+    return min(ceiling, base + complexity_bonus)
 
-    def _build_env(self, env: dict[str, Any]) -> dict[str, Any]:
-        safe_env: dict[str, Any] = {"__builtins__": dict(ALLOWED_BUILTINS)}
-        safe_env.update(env)
-        return safe_env
-
-    def _resolve_timeout_seconds(self, *, df: pd.DataFrame | None, mode: Literal["python", "plot"]) -> float:
-        row_count = 0 if df is None else int(len(df.index))
-        column_count = 0 if df is None else int(len(df.columns))
-        complexity_bonus = min(4.0, row_count / 4000.0 + column_count / 25.0)
-        if mode == "plot":
-            base = SETTINGS.plot_execution_timeout_base_seconds
-            ceiling = SETTINGS.plot_execution_timeout_max_seconds
-        else:
-            base = SETTINGS.python_execution_timeout_base_seconds
-            ceiling = SETTINGS.python_execution_timeout_max_seconds
-        return min(ceiling, base + complexity_bonus)
-
-def configure_fonts() -> None:
-    import matplotlib.pyplot as plt
-    plt.rcParams.update({
-        "figure.dpi": 120,
-        "font.size": 11,
-        "axes.titlesize": 14,
-        "axes.labelsize": 12,
-        "legend.fontsize": 10,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "figure.figsize": (8, 4.5),
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-    })

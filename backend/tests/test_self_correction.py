@@ -102,7 +102,7 @@ def test_build_repair_prompt_contains_suggestions():
     assert "missing_column: salse" in prompt
     assert "sales" in prompt
     assert "available_columns: sales, date, region" in prompt
-    assert "不要使用 import、文件访问、eval、exec 或任何被禁止的 API。" in prompt
+    assert "Do not use  import, File access, eval, exec, or any other forbidden APIs." in prompt
     assert "print(df['salse'])" in prompt
 
 
@@ -152,7 +152,7 @@ def test_python_inter_error_audit_extra_contains_structured_error(tmp_path: Path
 
     result = tools.python_inter.func(py_code="print(df['salse'])")
 
-    assert "代码执行失败" in result
+    assert "Code execution failed" in result
     record = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
     structured_error = record["extra"]["structured_error"]
     assert structured_error["error_type"] == "missing_column"

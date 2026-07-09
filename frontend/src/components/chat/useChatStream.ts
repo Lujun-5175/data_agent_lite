@@ -4,7 +4,6 @@ import { API_ENDPOINTS, getFriendlyErrorMessage, readApiErrorInfo } from '../../
 import type { UploadedDataset } from '../../types/data';
 import type { ChatMessage } from './types';
 import {
-  extractImageUrl,
   extractStreamText,
   isNonEmptyString,
   normalizeRouteInfo,
@@ -17,13 +16,11 @@ export function useChatStream({
   buildHistory,
   appendMessage,
   upsertMessage,
-  appendImageMessage,
 }: {
   uploadedDataset: UploadedDataset | null;
   buildHistory: () => Array<{ type: string; content: string }>;
   appendMessage: (message: ChatMessage) => void;
   upsertMessage: (messageId: string, updater: (message: ChatMessage) => ChatMessage) => void;
-  appendImageMessage: (message: ChatMessage) => void;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const assistantMessageIdRef = useRef<string | null>(null);
@@ -81,6 +78,7 @@ export function useChatStream({
     });
 
     let accumulatedContent = '';
+    let accumulatedThinking = '';
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
     cancelActiveRequest();
@@ -153,6 +151,19 @@ export function useChatStream({
               continue;
             }
 
+            if (event.eventType === 'thinking_chunk') {
+              const thinkingText = extractStreamText(event.payload);
+              if (thinkingText) {
+                if (isStaleRequest(requestGeneration)) return;
+                accumulatedThinking += thinkingText;
+                upsertMessage(assistantMessageId, (message) => ({
+                  ...message,
+                  thinkingContent: accumulatedThinking,
+                }));
+              }
+              continue;
+            }
+
             if (event.eventType === 'tool_start') {
               if (isStaleRequest(requestGeneration)) return;
               upsertStatusMessage(assistantMessageId, 'Generating analysis…');
@@ -162,24 +173,6 @@ export function useChatStream({
             if (event.eventType === 'tool_end') {
               if (isStaleRequest(requestGeneration)) return;
               upsertStatusMessage(assistantMessageId, 'Analysis complete');
-              continue;
-            }
-
-            if (event.eventType === 'image_generated') {
-              if (isStaleRequest(requestGeneration)) return;
-              const imageUrl = extractImageUrl(event.payload);
-              if (imageUrl) {
-                appendImageMessage({
-                  id: `${assistantMessageId}-image-${Date.now()}`,
-                  type: 'assistant',
-                  kind: 'image',
-                  content: isNonEmptyString(event.payload.filename) ? `Chart: ${event.payload.filename}` : 'Chart result',
-                  imageUrl,
-                  filename: isNonEmptyString(event.payload.filename) ? event.payload.filename : undefined,
-                  timestamp: new Date(),
-                });
-              }
-              upsertStatusMessage(assistantMessageId, 'Chart attached to conversation');
               continue;
             }
 

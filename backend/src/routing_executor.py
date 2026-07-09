@@ -15,8 +15,8 @@ from src.request_context import get_request_id, set_degradation_mode, set_failur
 from src.result_types import get_artifact_repository
 from src.routing_models import RoutingDecision
 from src.settings import SETTINGS
-from src.sse import backend_image_url, build_streaming_response, extract_text_from_chunk, format_sse
-from src.tools import bind_current_dataset_id, consume_current_image_event
+from src.sse import build_streaming_response, extract_text_from_chunk, format_sse
+from src.tools import bind_current_dataset_id
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ class ExecutorDependencies:
 @dataclass(slots=True)
 class StreamOutcome:
     buffered_text_chunks: list[str]
-    saw_chart_image: bool = False
     saw_ml_tool_call: bool = False
     produced_ml_artifact_types: set[str] | None = None
     emitted_text_chunk_count: int = 0
@@ -331,103 +330,116 @@ async def _stream_graph_attempt(
     messages_for_graph: list[dict[str, object]],
     recursion_limit: int,
     dependencies: ExecutorDependencies,
-) -> tuple[list[str], StreamOutcome]:
+) -> tuple[list[str], AppError | None]:
+    """Run the agent graph and stream events. Returns (emitted_events, error).
+    On loop guard error, returns partial events plus the error instead of raising.
+    """
     set_failure_stage("model_stream")
     runtime_context = AgentContext(dataset_id=dataset_id)
     last_seen_artifact_id, _ = _get_latest_artifact_info(dataset_id)
     outcome = StreamOutcome(buffered_text_chunks=[])
     emitted_events: list[str] = []
     loop_guard = LoopGuardState()
+    graph_error: AppError | None = None
 
-    async for event in graph.astream_events(
-        {"messages": messages_for_graph},
-        config={"configurable": {"dataset_id": dataset_id}, "recursion_limit": recursion_limit},
-        context=runtime_context,
-        version="v2",
-    ):
-        event_name = str(event.get("event") or "")
-        data = event.get("data") or {}
-        name = event.get("name")
-        if event_name == "on_tool_start":
-            loop_guard.register_tool_start(
-                _build_tool_signature(
-                    str(name) if isinstance(name, str) else None,
-                    data,
+    try:
+        async for event in graph.astream_events(
+            {"messages": messages_for_graph},
+            config={"configurable": {"dataset_id": dataset_id}, "recursion_limit": recursion_limit},
+            context=runtime_context,
+            version="v2",
+        ):
+            event_name = str(event.get("event") or "")
+            data = event.get("data") or {}
+            name = event.get("name")
+            if event_name == "on_tool_start":
+                loop_guard.register_tool_start(
+                    _build_tool_signature(
+                        str(name) if isinstance(name, str) else None,
+                        data,
+                    )
                 )
-            )
-            _check_loop_guard(loop_guard)
-            if isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
-                outcome.saw_ml_tool_call = True
+                try:
+                    _check_loop_guard(loop_guard)
+                except AppError as exc:
+                    graph_error = exc
+                    break
+                if isinstance(name, str) and name in ML_DIRECT_TOOL_NAMES:
+                    outcome.saw_ml_tool_call = True
 
-            emitted_events.append(
-                format_sse(
-                    "tool_start",
-                    dependencies.build_event_payload({"tool_name": name}, dataset_id=dataset_id),
+                emitted_events.append(
+                    format_sse(
+                        "tool_start",
+                        dependencies.build_event_payload({"tool_name": name}, dataset_id=dataset_id),
+                    )
                 )
-            )
-            continue
-
-        if event_name == "on_chain_stream":
-            continue
-
-        if event_name == "on_chat_model_stream":
-            chunk = data.get("chunk") if isinstance(data, dict) else None
-            text = extract_text_from_chunk(chunk)
-            if not text:
                 continue
-            tool_error_payload = _extract_tool_error_payload(text)
-            if tool_error_payload is not None:
-                outcome.tool_error_payload = tool_error_payload
+
+            if event_name == "on_chain_stream":
                 continue
-            loop_guard.register_text_progress()
-            outcome.emitted_text_chunk_count += 1
-            emitted_events.append(
-                format_sse(
-                    "message_chunk",
-                    dependencies.build_event_payload({"content": text}, dataset_id=dataset_id),
-                )
-            )
-            continue
 
-        if event_name == "on_tool_end":
-            if outcome.tool_error_payload is not None:
-                _raise_tool_error(outcome.tool_error_payload)
+            if event_name == "on_chat_model_stream":
+                chunk = data.get("chunk") if isinstance(data, dict) else None
+                text = extract_text_from_chunk(chunk)
 
-            current_artifact_id, _ = _get_latest_artifact_info(dataset_id)
-            if current_artifact_id and current_artifact_id != last_seen_artifact_id:
-                loop_guard.register_artifact_progress()
-                last_seen_artifact_id = current_artifact_id
-
-            emitted_events.append(
-                format_sse(
-                    "tool_end",
-                    dependencies.build_event_payload({"tool_name": name}, dataset_id=dataset_id),
-                )
-            )
-            image_event = consume_current_image_event()
-            if image_event:
-                filename = image_event.get("filename")
-                if isinstance(filename, str) and filename:
-                    outcome.saw_chart_image = True
-                    loop_guard.register_artifact_progress()
+                # Extract reasoning/thinking content from DeepSeek streaming chunks
+                reasoning = ""
+                if chunk is not None:
+                    if isinstance(chunk, dict):
+                        kwargs = chunk.get("additional_kwargs", {}) or {}
+                    else:
+                        kwargs = getattr(chunk, "additional_kwargs", {}) or {}
+                    reasoning = kwargs.get("reasoning_content", "") or ""
+                if reasoning:
                     emitted_events.append(
                         format_sse(
-                            "image_generated",
-                            dependencies.build_event_payload(
-                                {
-                                    "type": "image_generated",
-                                    "filename": filename,
-                                    "image_url": backend_image_url(request, filename),
-                                    "tool_name": image_event.get("tool_name"),
-                                },
-                                dataset_id=dataset_id,
-                            ),
+                            "thinking_chunk",
+                            dependencies.build_event_payload({"content": reasoning}, dataset_id=dataset_id),
                         )
                     )
-            loop_guard.register_tool_end()
-            _check_loop_guard(loop_guard)
 
-    return emitted_events, outcome
+                if not text:
+                    continue
+                tool_error_payload = _extract_tool_error_payload(text)
+                if tool_error_payload is not None:
+                    outcome.tool_error_payload = tool_error_payload
+                    continue
+                loop_guard.register_text_progress()
+                outcome.emitted_text_chunk_count += 1
+                emitted_events.append(
+                    format_sse(
+                        "message_chunk",
+                        dependencies.build_event_payload({"content": text}, dataset_id=dataset_id),
+                    )
+                )
+                continue
+
+            if event_name == "on_tool_end":
+                if outcome.tool_error_payload is not None:
+                    _raise_tool_error(outcome.tool_error_payload)
+
+                current_artifact_id, _ = _get_latest_artifact_info(dataset_id)
+                if current_artifact_id and current_artifact_id != last_seen_artifact_id:
+                    loop_guard.register_artifact_progress()
+                    last_seen_artifact_id = current_artifact_id
+
+                emitted_events.append(
+                    format_sse(
+                        "tool_end",
+                        dependencies.build_event_payload({"tool_name": name}, dataset_id=dataset_id),
+                    )
+                )
+                loop_guard.register_tool_end()
+                try:
+                    _check_loop_guard(loop_guard)
+                except AppError as exc:
+                    graph_error = exc
+                    break
+    except Exception as exc:
+        if graph_error is None:
+            graph_error = dependencies.classify_stream_exception(exc)
+
+    return emitted_events, graph_error
 
 
 def execute_chat_stream_response(
@@ -577,7 +589,7 @@ def execute_chat_stream_response(
                 for index, (mode, messages_for_graph, recursion_limit) in enumerate(attempts):
                     try:
                         set_degradation_mode(mode)
-                        events, _ = await _stream_graph_attempt(
+                        events, graph_error = await _stream_graph_attempt(
                             request,
                             graph=graph,
                             requirements=requirements,
@@ -588,6 +600,32 @@ def execute_chat_stream_response(
                         )
                         for event in events:
                             yield event
+                        if graph_error:
+                            # Partial events (including thinking_chunk) already yielded.
+                            # Check if we should retry.
+                            mapped_error = dependencies.classify_stream_exception(graph_error)
+                            set_failure_stage(mapped_error.stage)
+                            logger.exception(
+                                "chat stream failed",
+                                extra={
+                                    "request_id": get_request_id(),
+                                    "dataset_id": dataset_id,
+                                    "degradation_mode": mode,
+                                    "history_message_count": requirements.history_message_count,
+                                    "compressed_history_count": requirements.compressed_history_count,
+                                    "artifact_refs_count": requirements.artifact_refs_count,
+                                    "failure_stage": mapped_error.stage,
+                                    "error_code": mapped_error.code,
+                                    "primary_mode": requirements.routing_decision.primary_mode,
+                                    "route_source": getattr(requirements.routing_decision, "route_source", None),
+                                    "attempt": index,
+                                },
+                            )
+                            if (mapped_error.retryable or mapped_error.code == "agent_recursion_limit") and index < len(attempts) - 1:
+                                continue
+                            yield dependencies.build_error_sse(mapped_error, dataset_id=dataset_id)
+                            yield dependencies.build_done_sse(dataset_id=dataset_id)
+                            return
                         yield dependencies.build_done_sse(dataset_id=dataset_id)
                         return
                     except Exception as exc:

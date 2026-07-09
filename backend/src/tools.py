@@ -1,26 +1,13 @@
 from __future__ import annotations
 
-import ast
-import contextlib
 import json
 import logging
-import platform
 import sys
 import time
-from contextvars import ContextVar, Token
-from pathlib import Path
 from typing import Any, Literal
-from uuid import uuid4
 
-import matplotlib
-
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
-from scipy import stats as scipy_stats
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -29,7 +16,6 @@ from src.data_manager import (
     DatasetLoadError,
     DatasetNotFoundError,
     get_dataframe,
-    register_dataset_generated_image,
 )
 from src.errors import AppError
 from src.ml_helpers import BaselineMLService, MLHelperError, MLHelperAPI
@@ -40,54 +26,20 @@ from src.settings import SETTINGS
 from src.safe_executor import (
     SafeExecutionError,
     ToolExecutionTimeoutError,
-    SafeCodeValidator,
-    SafePythonExecutor,
+    safe_execute_python,
     ReadOnlyDataFrameProxy,
     ReadOnlySeriesProxy,
-    _StdoutCollector,
-    _execution_timeout,
     bind_current_dataset_id,
     get_current_dataset_id,
-    consume_current_image_event,
-    set_current_image_event,
-    configure_fonts,
-    ALLOWED_BUILTINS,
-    FORBIDDEN_CALL_NAMES,
-    FORBIDDEN_METHOD_NAMES,
-    FORBIDDEN_IDENTIFIERS,
 )
 from src.stats_service import DataHelperAPI, StatsHelperAPI
-from src.plot_service import PlotHelperAPI
 from src.profile_service import ProfileHelperAPI
 
 logger = logging.getLogger(__name__)
 
-# Configure fonts (platform-specific font fallbacks)
-import platform as _platform
-_system_name = _platform.system()
-if _system_name == "Windows":
-    plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
-elif _system_name == "Darwin":
-    plt.rcParams["font.sans-serif"] = ["Arial Unicode MS", "PingFang SC"]
-else:
-    plt.rcParams["font.sans-serif"] = ["WenQuanYi Micro Hei", "DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
-
-configure_fonts()
-
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-STATIC_IMAGES_DIR = (BACKEND_ROOT / "static" / "images").resolve()
-STATIC_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-EXECUTOR = SafePythonExecutor(image_dir=STATIC_IMAGES_DIR)
-
 
 class PythonCodeInput(BaseModel):
-    py_code: str = Field(description="Python code. Available variables: df, data, viz, stats, profile, ml.")
-
-
-class FigCodeInput(BaseModel):
-    py_code: str = Field(description="Plotting code. Must generate an image object.")
-    fname: str = Field(description="Image variable name, e.g. 'fig'.")
+    py_code: str = Field(description="Python code. Available variables: df, data, stats, profile, ml.")
 
 
 class MLLogisticFitInput(BaseModel):
@@ -163,11 +115,10 @@ def _get_dataset_df() -> pd.DataFrame | None:
         return None
 
 
-def _build_helper_api(df: pd.DataFrame) -> tuple[DataHelperAPI, PlotHelperAPI, StatsHelperAPI, ProfileHelperAPI, MLHelperAPI]:
+def _build_helper_api(df: pd.DataFrame) -> tuple[DataHelperAPI, StatsHelperAPI, ProfileHelperAPI, MLHelperAPI]:
     dataset_id = get_current_dataset_id()
     return (
         DataHelperAPI(df),
-        PlotHelperAPI(df),
         StatsHelperAPI(df, dataset_id=dataset_id),
         ProfileHelperAPI(dataset_id=dataset_id),
         MLHelperAPI(df, dataset_id=dataset_id),
@@ -310,7 +261,7 @@ def _structured_error_extra(
 def _is_execution_failure_text(result: str | None) -> bool:
     if not isinstance(result, str):
         return False
-    return result.startswith("Code execution failed:") or result.startswith("Plot execution failed:")
+    return result.startswith("Code execution failed:")
 
 
 def _record_tool_audit(
@@ -350,7 +301,12 @@ def _record_tool_audit(
 @tool(args_schema=PythonCodeInput)
 def python_inter(py_code: str) -> str:
     """
-    Safely execute restricted data analysis code, exposing only whitelisted helper APIs.
+    Execute Python data analysis code in a secure sandbox.
+    Available objects: `df` (pandas DataFrame, read-only), `pd`, `np`, `data`, `stats`, `profile`, `ml` helper APIs.
+    `import` is BLOCKED. Use `pd.DataFrame()`, `pd.to_datetime()` directly.
+    Use `print()` to output results.
+    When a column name contains spaces or special chars, use df["col name"] syntax.
+    Example: monthly = df.assign(period=df["date"].dt.to_period("M")).groupby("period")["value"].sum()
     """
     start = time.perf_counter()
     dataset_id = get_current_dataset_id()
@@ -370,16 +326,15 @@ def python_inter(py_code: str) -> str:
 
     available_columns = _available_columns_for_self_correction(df)
     try:
-        data, viz, stats, profile, ml = _build_helper_api(df)
+        data, stats, profile, ml = _build_helper_api(df)
         env = {
             "df": ReadOnlyDataFrameProxy(df),
             "data": data,
-            "viz": viz,
             "stats": stats,
             "profile": profile,
             "ml": ml,
         }
-        result = EXECUTOR.safe_execute_python(py_code, env, df=df)
+        result = safe_execute_python(py_code, env, df=df)
         if _is_execution_failure_text(result):
             _record_tool_audit(
                 tool_name="python_inter",
@@ -474,137 +429,6 @@ def python_inter(py_code: str) -> str:
         raise
 
 
-@tool(args_schema=FigCodeInput)
-def fig_inter(py_code: str, fname: str) -> str:
-    """
-    Safely execute plotting code and save the generated image.
-    """
-    start = time.perf_counter()
-    dataset_id = get_current_dataset_id()
-    tool_args = _audit_tool_args(fname=fname)
-    df = _get_dataset_df()
-    if df is None:
-        result = "错误：No active dataset. Please upload data first."
-        _record_tool_audit(
-            tool_name="fig_inter",
-            dataset_id=dataset_id,
-            tool_args=tool_args,
-            code=py_code,
-            execution_status="success",
-            start=start,
-            result=result,
-        )
-        return result
-
-    available_columns = _available_columns_for_self_correction(df)
-    try:
-        data, viz, stats, profile, ml = _build_helper_api(df)
-        env = {
-            "df": ReadOnlyDataFrameProxy(df),
-            "data": data,
-            "viz": viz,
-            "stats": stats,
-            "profile": profile,
-            "ml": ml,
-        }
-        set_current_image_event(None)
-        result = EXECUTOR.safe_execute_plot(py_code, env, fname, df=df)
-        if _is_execution_failure_text(result):
-            _record_tool_audit(
-                tool_name="fig_inter",
-                dataset_id=dataset_id,
-                tool_args=tool_args,
-                code=py_code,
-                execution_status="error",
-                start=start,
-                result=result,
-                error_message=result,
-                extra=_structured_error_extra(
-                    result,
-                    dataset_id=dataset_id,
-                    available_columns=available_columns,
-                    original_code=py_code,
-                    tool_name="fig_inter",
-                ),
-            )
-            return result
-        _record_tool_audit(
-            tool_name="fig_inter",
-            dataset_id=dataset_id,
-            tool_args=tool_args,
-            code=py_code,
-            execution_status="success",
-            start=start,
-            result=result,
-        )
-        return result
-    except ToolExecutionTimeoutError as exc:
-        result = _serialize_tool_error(
-            error_code=exc.code,
-            message=exc.message,
-            tool_name="fig_inter",
-        )
-        _record_tool_audit(
-            tool_name="fig_inter",
-            dataset_id=dataset_id,
-            tool_args=tool_args,
-            code=py_code,
-            execution_status="timeout",
-            start=start,
-            result=result,
-            error_message=exc.message,
-            extra=_structured_error_extra(
-                exc,
-                dataset_id=dataset_id,
-                available_columns=available_columns,
-                original_code=py_code,
-                tool_name="fig_inter",
-            ),
-        )
-        return result
-    except SafeExecutionError as exc:
-        result = f"Plot code blocked by security policy: {exc}"
-        _record_tool_audit(
-            tool_name="fig_inter",
-            dataset_id=dataset_id,
-            tool_args=tool_args,
-            code=py_code,
-            execution_status="blocked",
-            start=start,
-            result=result,
-            error_message=str(exc),
-            blocked_reason=str(exc),
-            extra=_structured_error_extra(
-                exc,
-                dataset_id=dataset_id,
-                available_columns=available_columns,
-                original_code=py_code,
-                tool_name="fig_inter",
-            ),
-        )
-        return result
-    except Exception as exc:
-        _record_tool_audit(
-            tool_name="fig_inter",
-            dataset_id=dataset_id,
-            tool_args=tool_args,
-            code=py_code,
-            execution_status="error",
-            start=start,
-            error_message=str(exc),
-            extra=_structured_error_extra(
-                exc,
-                dataset_id=dataset_id,
-                available_columns=available_columns,
-                original_code=py_code,
-                tool_name="fig_inter",
-            ),
-        )
-        raise
-    finally:
-        plt.close("all")
-
-
 @tool(args_schema=MLLogisticFitInput)
 def ml_logistic_fit(target: str, features: list[str] | None = None, test_size: float | None = None, positive_label: Any | None = None) -> str:
     """
@@ -614,7 +438,7 @@ def ml_logistic_fit(target: str, features: list[str] | None = None, test_size: f
     if df is None:
         return "错误：No active dataset. Please upload data first."
 
-    _, _, _, _, ml = _build_helper_api(df)
+    _, _, _, ml = _build_helper_api(df)
     try:
         artifact = ml.logistic_fit(
             target=target,
@@ -636,7 +460,7 @@ def ml_linear_regression_fit(target: str, features: list[str] | None = None, tes
     if df is None:
         return "错误：No active dataset. Please upload data first."
 
-    _, _, _, _, ml = _build_helper_api(df)
+    _, _, _, ml = _build_helper_api(df)
     try:
         artifact = ml.linear_regression_fit(target=target, features=features, test_size=test_size)
         return _serialize_tool_payload(artifact)
@@ -653,7 +477,7 @@ def ml_metrics(model_artifact_id: str | None = None) -> str:
     if df is None:
         return "错误：No active dataset. Please upload data first."
 
-    _, _, _, _, ml = _build_helper_api(df)
+    _, _, _, ml = _build_helper_api(df)
     try:
         artifact = ml.metrics(model_artifact_id=model_artifact_id)
         return _serialize_tool_payload(artifact)
@@ -670,7 +494,7 @@ def ml_feature_importance(model_artifact_id: str | None = None, top_k: int = 10)
     if df is None:
         return "错误：No active dataset. Please upload data first."
 
-    _, _, _, _, ml = _build_helper_api(df)
+    _, _, _, ml = _build_helper_api(df)
     try:
         artifact = ml.feature_importance(model_artifact_id=model_artifact_id, top_k=top_k)
         return _serialize_tool_payload(artifact)
@@ -687,7 +511,7 @@ def ml_latest(artifact_type: str | None = None) -> str:
     if df is None:
         return "错误：No active dataset. Please upload data first."
 
-    _, _, _, _, ml = _build_helper_api(df)
+    _, _, _, ml = _build_helper_api(df)
     try:
         artifact = ml.latest(artifact_type=artifact_type)
         return _serialize_tool_payload(artifact)
@@ -744,7 +568,7 @@ def ml_execute(
 
     available_columns = _available_columns_for_self_correction(df)
     try:
-        _, _, _, _, ml = _build_helper_api(df)
+        _, _, _, ml = _build_helper_api(df)
         if action == "train":
             if not target:
                 result = "Error: training action must provide target."

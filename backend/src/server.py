@@ -13,7 +13,6 @@ from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from src.agent import graph
 from src.api_models import CorrelationRequest
@@ -46,8 +45,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-STATIC_DIR = (BACKEND_ROOT / "static").resolve()
-IMAGES_DIR = (STATIC_DIR / "images").resolve()
 TEMP_DATA_DIR = (BACKEND_ROOT / "temp_data").resolve()
 MAX_UPLOAD_SIZE_BYTES = SETTINGS.max_upload_size_bytes
 UPLOAD_CHUNK_SIZE = SETTINGS.upload_chunk_size
@@ -76,8 +73,6 @@ DEV_CORS_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
-IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -98,7 +93,6 @@ app = FastAPI(
         cleanup_func=cleanup_expired_artifacts,
         logger=logger,
         temp_dir_getter=lambda: TEMP_DATA_DIR,
-        images_dir_getter=lambda: IMAGES_DIR,
         interval_seconds_getter=lambda: ARTIFACT_CLEANUP_INTERVAL_SECONDS,
     ),
 )
@@ -110,8 +104,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
-
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.exception_handler(DatasetNotFoundError)
@@ -343,5 +335,5 @@ def _bind_agent_response_iterator(response, dataset_id: str | None):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8002"))
-    logger.info("Starting Data Agent backend", extra={"port": port, "images_dir": str(IMAGES_DIR)})
+    logger.info("Starting Data Agent backend", extra={"port": port})
     uvicorn.run("src.server:app", host="0.0.0.0", port=port, reload=IS_DEVELOPMENT)

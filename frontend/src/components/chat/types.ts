@@ -50,4 +50,6 @@ export interface ChatMessage {
   filename?: string;
   datasetPayload?: UploadedDataset;
   routeInfo?: RouteInfo;
+  /** DeepSeek reasoning/thinking chain content */
+  thinkingContent?: string;
 }

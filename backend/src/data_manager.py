@@ -62,7 +62,6 @@ class Dataset:
     analysis_preprocess_artifact: dict[str, Any] | None = None
     model_prep_plan_artifact: dict[str, Any] | None = None
     preprocessed: bool = False
-    generated_image_files: set[str] = field(default_factory=set)
 
     @property
     def row_count(self) -> int:
@@ -96,26 +95,11 @@ class Dataset:
     def working_df(self, value: pd.DataFrame) -> None:
         self.analysis_df = value
 
-    def register_generated_image(self, filename: str) -> None:
-        if filename:
-            self.generated_image_files.add(filename)
-
     def cleanup_artifacts(self) -> None:
         try:
             self.stored_path.unlink(missing_ok=True)
         except Exception:
             logger.warning("Failed to delete stored CSV", extra={"dataset_id": self.dataset_id})
-
-        images_dir = self.stored_path.parent.parent / "static" / "images"
-        for filename in list(self.generated_image_files):
-            image_path = (images_dir / filename).resolve()
-            try:
-                image_path.unlink(missing_ok=True)
-            except Exception:
-                logger.warning(
-                    "Failed to delete generated image",
-                    extra={"dataset_id": self.dataset_id, "filename": filename},
-                )
 
 
 @dataclass(slots=True)
@@ -178,15 +162,6 @@ class InMemoryDatasetRepository:
                 raise DatasetNotFoundError("Dataset not found or has been deleted.")
         logger.info("Dataset deleted", extra={"dataset_id": dataset_id})
         return dataset
-
-    def register_generated_image(self, dataset_id: str, filename: str) -> None:
-        if not filename:
-            return
-        with self._lock:
-            dataset = self._datasets.get(dataset_id)
-            if dataset is None:
-                return
-            dataset.register_generated_image(filename)
 
     def list_datasets(self) -> list[Dataset]:
         with self._lock:
@@ -573,20 +548,14 @@ def cleanup_dataset_artifacts(dataset_id: str) -> None:
     dataset.cleanup_artifacts()
 
 
-def register_dataset_generated_image(dataset_id: str, filename: str) -> None:
-    get_dataset_repository().register_generated_image(dataset_id, filename)
-
-
 def cleanup_expired_artifacts(
     *,
     temp_dir: Path,
-    images_dir: Path,
     ttl_seconds: int = ARTIFACT_TTL_SECONDS,
 ) -> dict[str, int]:
     cutoff = datetime.now(timezone.utc).timestamp() - ttl_seconds
     removed_temp = _cleanup_expired_files(temp_dir, cutoff=cutoff)
-    removed_images = _cleanup_expired_files(images_dir, cutoff=cutoff)
-    return {"temp_data": removed_temp, "images": removed_images}
+    return {"temp_data": removed_temp}
 
 
 def _cleanup_expired_files(directory: Path, *, cutoff: float) -> int:

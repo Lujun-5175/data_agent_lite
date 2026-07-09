@@ -109,6 +109,7 @@ def test_live_canary_filter_aggregation(client: TestClient):
 
 
 def test_live_canary_chart_generation(client: TestClient):
+    pytest.skip("Chart/image generation is not supported in this version.")
     dataset_id = _upload_fixture_dataset(client)
     _, events = _stream_events(
         client,

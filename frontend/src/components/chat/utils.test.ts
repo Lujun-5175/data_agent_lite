@@ -98,15 +98,11 @@ describe('chat utils', () => {
 
     expect(routeInfo).not.toBeNull();
     expect(routeInfo?.primaryMode).toBe('dataset_overview');
-    expect(routeInfo?.confidenceScore).toBe(0.72);
-    expect(routeInfo?.requestedCapabilities).toEqual(['summarize_dataset', 'inspect_schema']);
+    expect(routeInfo?.needsDataset).toBe(true);
+    expect(routeInfo?.needsToolExecution).toBe(false);
     expect(routeInfo?.finalBranch).toBe('dataset_overview');
     expect(routeInfo?.intentType).toBe('dataset_overview');
-    expect(routeInfo?.taskPlanAvailable).toBe(true);
-    expect(routeInfo?.taskPlanGoal).toBe('Compare grouped metrics');
-    expect(routeInfo?.taskPlanTasks[0]?.taskType).toBe('group_aggregate');
-    expect(routeInfo?.taskPlanAttempted).toBe(true);
-    expect(routeInfo?.taskPlanGenerationFailed).toBe(false);
+    expect(routeInfo?.routeSource).toBe('llm_primary');
     expect(summarizeRouteInfo(routeInfo!)).toContain('Dataset Overview');
   });
 });

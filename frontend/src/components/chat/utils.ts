@@ -56,72 +56,40 @@ export function extractImageUrl(payload: Record<string, unknown>) {
 
 export function normalizeRouteInfo(payload: Record<string, unknown>): RouteInfo | null {
   const primaryMode = typeof payload.primary_mode === 'string' ? payload.primary_mode : '';
-  const confidenceScore = typeof payload.confidence_score === 'number' ? payload.confidence_score : null;
-  const intentType = typeof payload.intent_type === 'string' ? payload.intent_type : '';
-  const confidence = typeof payload.confidence === 'string' ? payload.confidence : 'medium';
-  const routeSource = typeof payload.route_source === 'string' ? payload.route_source : '';
-  const finalBranch = typeof payload.final_branch === 'string' ? payload.final_branch : '';
-  if (!intentType || !routeSource) return null;
+  const routeSource = typeof payload.route_source === 'string' ? payload.route_source : 'llm';
+  if (!primaryMode) return null;
+
+  const intentType = typeof payload.intent_type === 'string' ? payload.intent_type : primaryMode;
+  const finalBranch = typeof payload.final_branch === 'string' ? payload.final_branch : primaryMode;
 
   return {
     primaryMode,
-    confidenceScore,
+    confidenceScore: null,
     intentType,
-    confidence,
+    confidence: 'medium',
     routeSource,
-    conflictFlags: Array.isArray(payload.conflict_flags)
-      ? payload.conflict_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    ambiguityFlags: Array.isArray(payload.ambiguity_flags)
-      ? payload.ambiguity_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    guardrailActions: Array.isArray(payload.guardrail_actions)
-      ? payload.guardrail_actions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    fallbackReasons: Array.isArray(payload.fallback_reasons)
-      ? payload.fallback_reasons.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    suggestedPlan: Array.isArray(payload.suggested_plan)
-      ? payload.suggested_plan.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    requestedCapabilities: Array.isArray(payload.requested_capabilities)
-      ? payload.requested_capabilities.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    requiresMl: payload.requires_ml === true,
-    requiresChart: payload.requires_chart === true,
-    requiresPythonAnalysis: payload.requires_python_analysis === true,
-    isFollowUp: payload.is_follow_up === true,
+    conflictFlags: [],
+    ambiguityFlags: [],
+    guardrailActions: [],
+    fallbackReasons: [],
+    suggestedPlan: [],
+    requestedCapabilities: [],
+    requiresMl: false,
+    requiresChart: false,
+    requiresPythonAnalysis: false,
+    isFollowUp: false,
     needsDataset: payload.needs_dataset === true,
     needsToolExecution: payload.needs_tool_execution === true,
-    needsArtifactContext: payload.needs_artifact_context === true,
+    needsArtifactContext: false,
     finalBranch,
-    taskPlanAvailable: payload.task_plan_available === true,
-    taskPlanGoal: typeof payload.task_plan_goal === 'string' ? payload.task_plan_goal : '',
-    taskPlanConfidence: typeof payload.task_plan_confidence === 'number' ? payload.task_plan_confidence : null,
-    taskPlanTasks: Array.isArray(payload.task_plan_tasks)
-      ? payload.task_plan_tasks
-          .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
-          .map((item) => ({
-            taskId: typeof item.task_id === 'string' ? item.task_id : '',
-            taskType: typeof item.task_type === 'string' ? item.task_type : '',
-            description: typeof item.description === 'string' ? item.description : '',
-            dependsOn: Array.isArray(item.depends_on)
-              ? item.depends_on.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-              : [],
-            requiredOutputs: Array.isArray(item.required_outputs)
-              ? item.required_outputs.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-              : [],
-          }))
-          .filter((item) => item.taskId || item.taskType || item.description)
-      : [],
-    taskPlanAmbiguityFlags: Array.isArray(payload.task_plan_ambiguity_flags)
-      ? payload.task_plan_ambiguity_flags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    taskPlanAssumptions: Array.isArray(payload.task_plan_assumptions)
-      ? payload.task_plan_assumptions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [],
-    taskPlanAttempted: payload.task_plan_attempted === true,
-    taskPlanGenerationFailed: payload.task_plan_generation_failed === true,
+    taskPlanAvailable: false,
+    taskPlanGoal: '',
+    taskPlanConfidence: null,
+    taskPlanTasks: [],
+    taskPlanAmbiguityFlags: [],
+    taskPlanAssumptions: [],
+    taskPlanAttempted: false,
+    taskPlanGenerationFailed: false,
   };
 }
 

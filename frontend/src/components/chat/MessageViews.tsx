@@ -1,4 +1,5 @@
-import { Bot, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, FileSpreadsheet, Image as ImageIcon, Table2, TriangleAlert, UserRound } from 'lucide-react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { UploadedDataset } from '../../types/data';
@@ -100,6 +101,8 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
   const isUser = message.type === 'user';
   const isStatus = message.kind === 'status';
   const isError = message.kind === 'error';
+  const hasThinking = !!message.thinkingContent;
+  const [showThinking, setShowThinking] = useState(false);
   const bubbleClass = isUser
     ? 'ml-auto max-w-[72%] border-sky-100 bg-sky-50 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.04)]'
     : isStatus
@@ -121,6 +124,23 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
       )}
 
       <div className={`max-w-[72%] rounded-[22px] border px-4 py-3 text-[15px] leading-7 shadow-[0_8px_20px_rgba(15,23,42,0.035)] ${bubbleClass}`}>
+        {hasThinking && (
+          <div className="mb-2">
+            <button
+              type="button"
+              onClick={() => setShowThinking((v) => !v)}
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            >
+              {showThinking ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              {showThinking ? 'Hide thinking' : 'Show thinking'}
+            </button>
+            {showThinking && (
+              <div className="mt-1 rounded-xl border border-slate-200/70 bg-slate-50/70 p-3 text-xs leading-6 text-slate-600 whitespace-pre-wrap">
+                {message.thinkingContent}
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex min-h-[48px] items-center">
           <div className="whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-900">
             <ReactMarkdown

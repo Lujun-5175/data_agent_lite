@@ -4,7 +4,7 @@ import ast
 
 import pytest
 
-from src.tools import SafeCodeValidator, SafeExecutionError
+from src.safe_executor import SafeCodeValidator, SafeExecutionError
 
 
 def _visit(code: str, **kwargs):
@@ -18,7 +18,7 @@ def test_safe_code_under_ast_node_limit_passes():
 
 
 def test_excessive_ast_nodes_blocked():
-    with pytest.raises(SafeExecutionError, match="AST 节点数超过限制"):
+    with pytest.raises(SafeExecutionError, match="AST node count exceeds limit"):
         _visit("a = 1\nb = 2\nc = 3\nd = 4", max_ast_nodes=5)
 
 
@@ -30,7 +30,7 @@ def test_reasonable_loop_nesting_allowed():
 
 
 def test_excessive_loop_nesting_blocked():
-    with pytest.raises(SafeExecutionError, match="循环嵌套层数超过限制"):
+    with pytest.raises(SafeExecutionError, match="loop nesting exceeds limit"):
         _visit(
             "for x in xs:\n    for y in ys:\n        for z in zs:\n            for w in ws:\n                pass\n",
             max_loop_nesting=3,
@@ -42,7 +42,7 @@ def test_reasonable_comprehension_allowed():
 
 
 def test_excessive_comprehension_nesting_blocked():
-    with pytest.raises(SafeExecutionError, match="推导式嵌套层数超过限制"):
+    with pytest.raises(SafeExecutionError, match="comprehension nesting exceeds limit"):
         _visit(
             "result = [[[x for x in xs] for y in ys] for z in zs]",
             max_comprehension_nesting=2,
@@ -54,5 +54,5 @@ def test_reasonable_pandas_call_chain_allowed():
 
 
 def test_excessive_call_chain_blocked():
-    with pytest.raises(SafeExecutionError, match="调用链过长"):
+    with pytest.raises(SafeExecutionError, match="call chain too long"):
         _visit("result = a.b.c.d.e.f.g.h.i.j()")

@@ -15,7 +15,6 @@ from src.data_manager import get_data_context_summary, get_dataset
 from src.settings import SETTINGS
 from src.tools import (
     bind_current_dataset_id,
-    fig_inter,
     ml_execute,
     stats_execute,
     python_inter,
@@ -24,8 +23,7 @@ from src.tools import (
 logger = logging.getLogger(__name__)
 load_dotenv(override=True)
 
-# Use the non-thinking model by default to avoid DeepSeek reasoning_content
-# round-trip errors in LangGraph agent tool loops.
+# Model selection - deepseek-v4-flash supports reasoning_content (think mode) for showing thought chains
 DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 
@@ -153,7 +151,7 @@ def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
             "Only call `ml_execute` when training, evaluation, or feature importance is actually needed."
         )
     if primary_mode == "visualization":
-        return "This is a visualization request. Do minimal analysis first, then use `fig_inter` to generate the chart."
+        return "This is a visualization request. Focus on data grouping, aggregation, and presenting numeric results in table form."
     if primary_mode == "clarification":
         return "Insufficient information. Prioritize clarifying the user's missing filters, target columns, or expected output. Do not enter complex tool loops directly."
     if primary_mode == "direct_answer":
@@ -162,7 +160,7 @@ def _build_route_hint(routing_decision: dict[str, Any] | None) -> str:
     return (
         "Select minimal necessary tools based on routing_decision. "
         "Stats questions → stats_execute, exploratory analysis → python_inter, "
-        "clear modeling requests → `ml_execute`, visualization → `fig_inter`."
+        "clear modeling requests → `ml_execute`."
     )
 
 
@@ -176,7 +174,6 @@ model = ChatDeepSeek(
 tools = [
     python_inter,
     stats_execute,
-    fig_inter,
     ml_execute,
 ]
 
@@ -334,35 +331,66 @@ def dataset_context_middleware(request) -> str:
 [Dataset Summary]
 {data_context}
 
+[TOOLS]
+You have 3 tools:
+1. **python_inter(py_code)** -- execute pandas/numpy analysis in a secure sandbox (use for custom aggregations, merges, row-level logic)
+2. **stats_execute(action, ...)** -- statistical analysis (grouping, t-test, chi-square, correlation, describe). Prefer this over python_inter for standard stats.
+3. **ml_execute(action, ...)** -- machine learning (train, predict, metrics, feature importance)
+
+IMPORTANT: Charts/plots are NOT available. Present all results as data tables and text summaries.
+
+[Sandbox Rules]
+ALLOWED: `df` (read-only DataFrame), `data`, `stats`, `profile`, `ml` helpers; `pd` (pandas), `np` (numpy); `print()`, `len()`, `sorted()`, `min()`, `max()`, `sum()`, `round()`, `list()`, `dict()`, `str()`, `int()`, `float()`, `set()`, `tuple()`, `bool()`, `range()`, `enumerate()`, `zip()`, `type()`, `dir()`, `any()`, `all()`, `abs()`
+ALLOWED on `df`: `df["col"]`, `df.col_name`, `.groupby()`, `.agg()`, `.assign()`, `.merge()`, `.sort_values()`, `.rename()`, `.reset_index()`, `.value_counts()`, `.dropna()`, `.fillna()`, `.loc[]`, `.iloc[]`, `.copy()`, `.astype()`
+BLOCKED: `import`, `eval`, `exec`, `open`, `getattr`, `setattr`, `delattr`, `globals`, `locals`, `vars`, `compile`, `__import__`, `breakpoint`, `input`
+BLOCKED identifiers: `os`, `sys`, `subprocess`, `shutil`, `requests`, `socket`, `pathlib`
+
+[Helper APIs — available inside python_inter]
+- `data.head(n)`, `data.describe()`, `data.numeric_summary()`, `data.missing_summary()`
+- `data.value_counts("col")`, `data.unique("col")`, `data.correlation()`
+- `data.group_mean("group_col", "value_col")`, `data.group_sum("group_col", "value_col")`
+- `data.filter_equals("col", value)`, `data.select(["col1", "col2"])`
+- `stats.describe_numeric("col")`, `stats.describe_categorical("col")`
+- `stats.group_summary(group_col="col", value_col="col", agg="sum|mean|count|std|min|max")`
+- `stats.t_test("col", group_col="g", group_value="x")`, `stats.chi_square("c1", "c2")`, `stats.anova("value", "group")`
+- `profile.schema()`, `profile.analysis_preprocess()`, `profile.model_prep_plan()`
+- `ml.linear_regression_fit(target="y", features=[...])`, `ml.logistic_fit(...)`, `ml.metrics()`, `ml.feature_importance()`
+
+[Examples — inside python_inter]
+  # GroupBy + agg using pandas
+  monthly = df.assign(ym=df["order_date"].dt.to_period("M")).groupby("ym")["total_amount"].sum().reset_index()
+  print(monthly)
+
+  # Group summary via stats helper (inside python_inter)
+  result = stats.group_summary(group_col="region", value_col="total_amount", agg="sum")
+  print(result)
+
+  # Value counts
+  print(data.value_counts("region"))
+
+[Pitfalls]
+- Prefer `stats_execute` for standard stats; use `python_inter` only when stats_execute cannot express the query.
+- When a tool returns an error, adapt your approach — do NOT retry the same code.
+- `df["col"]` works for reading, but `df["col"] = ...` is blocked (read-only).
+- Charts/plots are NOT available — present results as tables and text.
+- `pd` and `np` are available without import.
+
 [Your Responsibilities]
-1. For data-based questions, prioritize tools: data understanding/preprocessing -> `profile.*`, statistical analysis -> `stats.*`, clear modeling requests -> `ml_execute`, charts -> `fig_inter`.
-2. Variable `df` is a read-only data view; `data`, `viz`, `stats`, `profile`, `ml` are whitelisted helper APIs. Prefer helper APIs; do not rely on undeclared capabilities.
-   For clear modeling requests, first verify whether training/evaluation is truly needed before calling `ml_execute`. Do not mistake analytical requests for modeling requests.
-   For statistical analysis, filtering, aggregation, comparison, and overviews, prefer `stats_execute`. Only use `python_inter` for more flexible exploratory analysis or plotting logic.
-3. Answer only based on the current dataset and tool outputs. Never guess missing data or fabricate computed results.
-4. Complete calculations before answering. If results are empty or samples insufficient, state this clearly and provide actionable next steps.
-5. For charting tasks, provide a brief conclusion (what the chart shows) and keep titles/axis labels clear.
-6. If the request involves non-existent columns, invalid filters, or unsupported operations, explain why and offer alternatives.
-7. If the user asks about field semantics, modelable columns, or preprocessing steps, prioritize returning structured artifact results (e.g., schema_profile / preprocess_result / model_prep_plan) followed by a brief summary.
-8. Baseline ML only supports logistic regression / linear regression. AutoML, Random Forest, XGBoost, SHAP are not supported. For out-of-scope requests, clearly refuse and suggest alternatives.
-9. If the user explicitly requests model metrics or feature importance, continue calling `ml_execute` with `action="metrics"` / `action="feature_importance"`, reusing the latest model artifact.
+1. Complete calculations before answering. If results are empty, state it clearly.
+2. Default to English. Use Markdown: **bold**, `code`, ## headings, | tables |.
+3. Lead with the conclusion, then key evidence.
+4. Never fabricate data, APIs, or conclusions.
 
-[Output Style]
-- Default to English. Lead with the conclusion, then provide key evidence (key numbers, group results, trends).
-- Be concise. Do not repeat the user question or output meaningless template phrases.
-- Use Markdown formatting: **bold** for emphasis, `code` for values/columns, ## headings for sections, and | tables | for structured data.
-- If the user requests Top N, filtering, grouping, or time aggregation, reflect whether these constraints were correctly applied.
-
-[Multi-turn Context Rules]
-- Inherit filters and target metrics from the current session (e.g., "now looking at California only").
-- If a follow-up question is ambiguous, confirm the scope in one sentence before providing results.
+[Multi-turn Context]
+- Inherit filters and targets from the session.
+- If a follow-up is ambiguous, confirm the scope in one sentence.
 
 [Current Route Hint]
 - {route_hint}
 
-[Rules When No Dataset]
-- If it is general chat: answer directly.
-- If the user explicitly wants data analysis: prompt them to upload a CSV first.
+[When No Dataset]
+- General chat: answer directly.
+- Data analysis request: ask them to upload a CSV.
 """
 
 

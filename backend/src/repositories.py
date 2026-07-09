@@ -19,9 +19,6 @@ class DatasetRepository(Protocol):
     def ensure_preprocessed(self, dataset_id: str) -> Any:
         ...
 
-    def register_generated_image(self, dataset_id: str, filename: str) -> None:
-        ...
-
     def get_schema_profile(self, dataset_id: str) -> dict[str, Any]:
         ...
 

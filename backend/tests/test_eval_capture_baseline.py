@@ -207,7 +207,7 @@ def test_router_mode_does_not_call_llm(monkeypatch: pytest.MonkeyPatch, tmp_path
     def _boom(*args, **kwargs):
         raise AssertionError("LLM should not be called in router mode")
 
-    monkeypatch.setattr("src.intent_planner.plan_intent_with_llm", _boom)
+    monkeypatch.setattr("src.intent_planner.plan_request_with_llm", _boom)
 
     count = create_router_predictions(cases_path, out_path)
     predictions = load_predictions(out_path)

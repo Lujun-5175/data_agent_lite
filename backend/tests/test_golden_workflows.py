@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from src import server
 from src.data_manager import get_dataframe
 from src.errors import AppError
-from src.tools import MLHelperAPI, ProfileHelperAPI, StatsHelperAPI, set_current_image_event
+from src.tools import MLHelperAPI, ProfileHelperAPI, StatsHelperAPI
 
 
 def _extract_messages(inputs: dict[str, Any]) -> list[dict[str, Any]]:
@@ -98,20 +98,6 @@ class GoldenWorkflowGraph:
             )
             payload = {"granularity": "month", "rows": grouped.to_dict(orient="records")}
             yield _text_event(json.dumps(payload, ensure_ascii=False))
-        elif "bar chart of sales by state for us" in latest:
-            filename = f"{uuid4().hex}.png"
-            image_path = (server.IMAGES_DIR / filename).resolve()
-            image_path.write_bytes(b"PNG")
-            set_current_image_event(
-                {
-                    "type": "image_generated",
-                    "filename": filename,
-                    "tool_name": "fig_inter",
-                }
-            )
-            yield _text_event("已根据 US 用户按州生成柱状图。")
-            yield {"event": "on_tool_end", "name": "fig_inter", "data": {}}
-            return
         elif "now only look at california" in latest:
             metric = "total_sales"
             if "total sales" not in latest and "total sales" in previous_human:
@@ -386,25 +372,6 @@ def test_golden_time_grouping_monthly(client: TestClient):
         {"month": "2024-01", "sales_sum": 770},
         {"month": "2024-02", "sales_sum": 980},
     ]
-
-
-def test_golden_chart_generation(client: TestClient):
-    dataset_id = _upload_fixture_dataset(client)
-    events = _chat_stream_events(
-        client,
-        dataset_id,
-        [{"type": "human", "content": "Please create a bar chart of sales by state for US"}],
-    )
-    image_events = [payload for event_type, payload in events if event_type == "image_generated"]
-    assert image_events
-    image = image_events[-1]
-    filename = image["filename"]
-    assert isinstance(filename, str) and filename.endswith(".png")
-    assert "/" not in filename and "\\" not in filename
-    image_path = (server.IMAGES_DIR / filename).resolve()
-    assert image_path.exists()
-    assert image_path.parent == server.IMAGES_DIR.resolve()
-    assert image["image_url"].endswith(f"/static/images/{filename}")
 
 
 def test_golden_follow_up_query_context(client: TestClient):

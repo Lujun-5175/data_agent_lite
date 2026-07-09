@@ -31,7 +31,7 @@ class StructuredExecutionError(BaseModel):
     repair_prompt: str | None = None
 
 
-_TOOL_PREFIX_RE = re.compile(r"^(?:Code execution failed|Plot execution failed|错误)\s*[:：]\s*", re.IGNORECASE)
+_TOOL_PREFIX_RE = re.compile(r"^(?:Code execution failed|错误)\s*[:：]\s*", re.IGNORECASE)
 _QUOTED_COLUMN_RE = re.compile(r"^\s*['\"](?P<column>[^'\"]+)['\"]\s*$")
 _KEYERROR_RE = re.compile(r"KeyError\s*[:(]\s*['\"](?P<column>[^'\"]+)['\"]\s*\)?", re.IGNORECASE)
 _KEYERROR_CALL_RE = re.compile(r"KeyError\((?P<quote>['\"])(?P<column>[^'\"]+)(?P=quote)\)", re.IGNORECASE)
@@ -39,9 +39,18 @@ _NOT_IN_INDEX_RE = re.compile(r"\[\s*['\"](?P<column>[^'\"]+)['\"]\s*\]\s+not in
 _NOT_IN_INDEX_QUOTED_RE = re.compile(r"['\"](?P<column>[^'\"]+)['\"]\s+not in index", re.IGNORECASE)
 _COLUMN_NOT_FOUND_RE = re.compile(r"(?:Column does not exist|排序Column does not exist)\s*[:：]\s*['\"]?(?P<column>[^'\"\n\r]+?)['\"]?(?:\s|$)", re.IGNORECASE)
 _NAME_ERROR_RE = re.compile(r"name\s+['\"](?P<name>[^'\"]+)['\"]\s+is\s+not\s+defined", re.IGNORECASE)
-_TARGET_ERROR_RE = re.compile(r"Target column(?:不存在|Not suitable for modeling)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
-_FEATURE_ERROR_RE = re.compile(r"Feature column(?:不存在)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
-_GROUP_ERROR_RE = re.compile(r"(?:group_by|group col|group_col|Group column)\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?", re.IGNORECASE)
+_TARGET_ERROR_RE = re.compile(
+    r"(?:Target column|目标列)(?:不存在|不可用于建模|Not suitable for modeling)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?",
+    re.IGNORECASE,
+)
+_FEATURE_ERROR_RE = re.compile(
+    r"(?:Feature column|特征列)(?:不存在)?\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?",
+    re.IGNORECASE,
+)
+_GROUP_ERROR_RE = re.compile(
+    r"(?:group_by|group col|group_col|Group column)\s*[:：]?\s*['\"]?(?P<name>[^'\"\n\r]+)?",
+    re.IGNORECASE,
+)
 
 
 def extract_missing_column(error_message: str) -> str | None:
@@ -168,12 +177,6 @@ def classify_execution_error(
         if available_columns and related_name:
             suggestions = suggest_similar_columns(related_name, available_columns)
         safe_to_retry = bool(suggestions) or bool(semantic_column_types)
-    elif _looks_like_plotting_failure(normalized_message):
-        error_type = "plotting_failure"
-        retryable = True
-        if available_columns and related_name:
-            suggestions = suggest_similar_columns(related_name, available_columns)
-        safe_to_retry = bool(suggestions) or "same size" in normalized_message.lower()
     elif _looks_like_safe_execution_blocked(class_name, normalized_message):
         error_type = "safe_execution_blocked"
     else:
@@ -348,31 +351,18 @@ def _looks_like_invalid_groupby(message: str) -> bool:
     return any(needle in lowered for needle in ("group_by", "group col", "group_col", "Group column"))
 
 
-def _looks_like_plotting_failure(message: str) -> bool:
-    lowered = message.casefold()
-    return any(
-        needle in lowered
-        for needle in (
-            "绘图",
-            "plot",
-            "chart",
-            "could not interpret value",
-            "same size",
-            "x and y",
-        )
-    )
-
-
 def _looks_like_invalid_target(message: str) -> bool:
     lowered = message.casefold()
     return any(
-        needle in lowered
+        needle.casefold() in lowered
         for needle in (
-            "Target column",
+            "target column",
+            "目标列",
+            "目标列不存在",
+            "目标列不可用于建模",
             "positive_label",
             "正类",
-            "target",
-            "Not suitable for modeling",
+            "not suitable for modeling",
         )
     )
 
@@ -380,7 +370,7 @@ def _looks_like_invalid_target(message: str) -> bool:
 def _looks_like_invalid_feature_set(message: str) -> bool:
     lowered = message.casefold()
     return any(
-        needle in lowered
+        needle.casefold() in lowered
         for needle in (
             "Feature column",
             "可用Feature column",

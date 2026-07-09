@@ -4,7 +4,6 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
-from fastapi import Request
 from fastapi.responses import StreamingResponse
 
 
@@ -36,11 +35,6 @@ def extract_text_from_chunk(chunk: object) -> str:
     if isinstance(text, str):
         return text
     return ""
-
-
-def backend_image_url(request: Request, filename: str) -> str:
-    base_url = str(request.base_url).rstrip("/")
-    return f"{base_url}/static/images/{filename}"
 
 
 def build_streaming_response(event_generator: AsyncIterator[str]) -> StreamingResponse:
