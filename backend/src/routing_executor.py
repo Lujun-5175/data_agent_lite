@@ -437,6 +437,7 @@ async def _stream_graph_attempt(
                     break
     except Exception as exc:
         if graph_error is None:
+            logger.exception("Graph execution stream error: %s", exc)
             graph_error = dependencies.classify_stream_exception(exc)
 
     return emitted_events, graph_error
