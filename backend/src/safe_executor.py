@@ -5,14 +5,10 @@ Extracted from tools.py for modularity.
 from __future__ import annotations
 
 import ast
+import concurrent.futures
 import contextlib
 import logging
-import platform
-import signal
-import sys
-import time
 from contextvars import ContextVar, Token
-from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -198,19 +194,23 @@ class _StdoutCollector:
     def flush(self) -> None:
         pass
 
-@contextlib.contextmanager
-def _execution_timeout(seconds: float):
-    if platform.system() == "Windows":
-        yield
+
+
+def _execute_compiled(compiled: Any, env: dict[str, Any], timeout_seconds: float) -> None:
+    """Run compiled code with a cross-platform timeout via thread pool."""
+    if timeout_seconds <= 0:
+        exec(compiled, env, env)
         return
-    def _handler(signum: int, frame: Any) -> None:
-        raise ToolExecutionTimeoutError(seconds)
-    signal.signal(signal.SIGALRM, _handler)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        yield
+        future = pool.submit(exec, compiled, env, env)
+        try:
+            future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise ToolExecutionTimeoutError(timeout_seconds)
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        pool.shutdown(wait=False)
 
 # ── Read-only proxies ────────────────────────────────────────
 class ReadOnlyDataFrameProxy:
@@ -309,15 +309,19 @@ def safe_execute_python(py_code: str, env: dict[str, Any], *, df: pd.DataFrame |
     execution_env = _build_env(env)
     timeout_seconds = _resolve_timeout_seconds(df=df, mode="python")
 
+    collector = _StdoutCollector(output)
     try:
-        with contextlib.redirect_stdout(_StdoutCollector(output)):
-            with _execution_timeout(timeout_seconds):
-                exec(compiled, execution_env, execution_env)
+        with contextlib.redirect_stdout(collector):
+            _execute_compiled(compiled, execution_env, timeout_seconds)
     except SafeExecutionError:
+        raise
+    except ToolExecutionTimeoutError:
         raise
     except Exception as exc:
         logger.warning("Safe Python execution failed: %s", exc)
         return f"Code execution failed: {exc}"
+
+    printed = "".join(output).strip()
 
     printed = "".join(output).strip()
     if printed:
