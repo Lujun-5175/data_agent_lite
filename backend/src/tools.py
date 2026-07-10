@@ -706,7 +706,7 @@ def stats_execute(
 
     available_columns = _available_columns_for_self_correction(df)
     try:
-        _, _, stats, _, _ = _build_helper_api(df)
+        _, stats, _, _ = _build_helper_api(df)
         if action == "describe_numeric":
             artifact = stats.describe_numeric(columns)
         elif action == "describe_categorical":

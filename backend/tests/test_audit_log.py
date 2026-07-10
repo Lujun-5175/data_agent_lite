@@ -177,7 +177,7 @@ def test_stats_execute_safe_execution_error_audits_as_error(tmp_path: Path, monk
 
     monkeypatch.setattr(tools, "get_audit_logger", lambda: logger)
     monkeypatch.setattr(tools, "_get_dataset_df", lambda: pd.DataFrame({"x": [1]}))
-    monkeypatch.setattr(tools, "_build_helper_api", lambda df: (None, None, _FakeStats(), None, None))
+    monkeypatch.setattr(tools, "_build_helper_api", lambda df: (None, _FakeStats(), None, None))
 
     result = tools.stats_execute.func(action="latest")
 
